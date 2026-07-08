@@ -1,0 +1,15 @@
+# build
+/dist/
+/readignore
+/readignore.exe
+
+# go
+vendor/
+
+# editor
+.vscode/
+.idea/
+
+# os
+.DS_Store
+Thumbs.db
