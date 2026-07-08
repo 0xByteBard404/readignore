@@ -51,13 +51,11 @@ archives:
     builds: [readignore]
     name_template: >-
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    # 默认 tar.gz (linux/darwin)；windows 用 zip（Windows 习惯 zip）。
+    format: tar.gz
     format_overrides:
       - goos: windows
         formats: [zip]
-      - goos: linux
-        formats: [tar.gz]
-      - goos: darwin
-        formats: [tar.gz]
     files:
       - README.md
       - LICENSE
