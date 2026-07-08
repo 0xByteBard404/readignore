@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -165,20 +166,63 @@ func TestAdapter_Generate_RepoRootAgnostic(t *testing.T) {
 	assert.Equal(t, "opencode.json", files2[0].Path)
 }
 
-// TestAdapter_Generate_PreservesNegationPatterns 取反行（!）原样写进 read map：
-// opencode 没有「allow 更细」的取反语义，但保留原 pattern 让用户可见、可手工调；
-// 不应被本适配器悄悄丢弃（信息丢失）。
-func TestAdapter_Generate_PreservesNegationPatterns(t *testing.T) {
+// TestAdapter_Generate_NegationBecomesAllow 验证 readignore 的取反行（!pattern）
+// 在 opencode 适配器里被翻译成剥掉 ! 的 allow 键，而非字面 ! + deny（那是语义反转：
+// readignore 的 ! 是放行，字面 !+deny 反而成了虚假保护）。opencode glob 不支持 !
+// 前缀，本适配器依赖「更具体 glob 覆盖更宽泛」的机制实现放行（如 .env.example 比
+// .env.* 更具体，会胜出），近似 readignore 的取反语义。
+func TestAdapter_Generate_NegationBecomesAllow(t *testing.T) {
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{
-		RawPatterns: []string{".env", "!deploy/.env.sample"},
+		// 典型用例：deny 全部 .env / .env.*，但放行示例文件 .env.example。
+		RawPatterns: []string{".env", ".env.*", "!.env.example"},
 	})
 	require.NoError(t, err)
 
 	var doc map[string]any
 	require.NoError(t, json.Unmarshal([]byte(files[0].Content), &doc))
 	read := doc["permission"].(map[string]any)["read"].(map[string]any)
-	// 两条都保留（取反行不丢；用户可在 opencode 里手动改 allow）。
-	assert.Contains(t, read, ".env")
-	assert.Contains(t, read, "!deploy/.env.sample")
+
+	// 非取反行仍映射到 deny。
+	assert.Equal(t, "deny", read[".env"], "plain pattern must map to deny")
+	assert.Equal(t, "deny", read[".env.*"], "plain pattern must map to deny")
+
+	// 取反行：剥掉前导 ! 后映射到 allow（不是 deny）。
+	assert.Equal(t, "allow", read[".env.example"],
+		"negated pattern must become an allow key (readignore ! = unblock)")
+
+	// 关键：! 前缀必须剥干净，不能出现字面 "!pattern" 这个 key（opencode glob 不认 !）。
+	_, hasBang := read["!.env.example"]
+	assert.False(t, hasBang,
+		"literal \"!pattern\" must not leak into the map; opencode glob has no negation")
+}
+
+// TestAdapter_Generate_NegationBecomesAllow_MultipleCases 覆盖多条取反 pattern，
+// 确认 ! 剥除 + allow 映射对各种路径形态（basename、子目录、扩展名）都成立。
+func TestAdapter_Generate_NegationBecomesAllow_MultipleCases(t *testing.T) {
+	a := Adapter{}
+	files, err := a.Generate(adapter.Plan{
+		RawPatterns: []string{
+			"*.env",
+			"!.env.sample",      // basename 取反
+			"!deploy/secret.pem", // 子目录路径取反
+		},
+	})
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal([]byte(files[0].Content), &doc))
+	read := doc["permission"].(map[string]any)["read"].(map[string]any)
+
+	// 非取反行 → deny。
+	assert.Equal(t, "deny", read["*.env"])
+	// 取反行：剥 ! 后映射到 allow。
+	assert.Equal(t, "allow", read[".env.sample"], "basename negation → allow")
+	assert.Equal(t, "allow", read["deploy/secret.pem"], "subdir negation → allow")
+
+	// 任何字面 ! 前缀都不应残留。
+	for k := range read {
+		assert.False(t, strings.HasPrefix(k, "!"),
+			"key %q still has leading '!'; opencode glob has no negation", k)
+	}
 }

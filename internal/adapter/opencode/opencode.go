@@ -3,8 +3,25 @@
 //
 // opencode 的 permission 系统采用「glob → allow/ask/deny」三层模型，其中
 // read 权限直接控制文件读取工具（与 readignore「防读敏感文件」目标完全吻合）。
-// 故本适配器把 plan.RawPatterns 逐条翻译成 permission.read 的 "deny" 键，
+// 故本适配器把 plan.RawPatterns 逐条翻译成 permission.read 的 glob 键：
+//   - 普通 pattern（deny）原样写入并标记 "deny"；
+//   - 取反行（!pattern，readignore 语义为「放行」）剥掉前导 ! 后写入 actual
+//     pattern 并标记 "allow"，依赖 opencode「更具体 glob 覆盖更宽泛」的机制
+//     实现放行（如 .env.example 比 .env.* 更具体，allow 胜出）。
+//
 // 产出单文件 opencode.json（含官方 $schema 便于编辑器校验）。
+//
+// 取反语义限制声明（诚实标注）：opencode 的 glob 引擎**没有** gitignore 的取反
+// 或顺序语义——它不识别 ! 前缀，也不按声明顺序求最后命中者。故本适配器只能用
+// 「更具体的 allow glob 覆盖更宽泛的 deny glob」**近似** readignore 的取反。
+// 对常见用例（先 deny .env.* 再 !放行单个 .env.example）该近似成立；但对复杂取反链
+// （多条 ! 交织、取反后又被更具体 deny 覆盖等）可能与 readignore 语义存在边缘差异，
+// 用户若依赖复杂取反链应优先选用 claudecode 适配器（PreToolUse hook 完整实现
+// gitignore 取反语义）。
+//
+// 目录尾斜杠限制声明：opencode 文档未明确带尾斜杠的 pattern（如 secrets/）是否
+// 按目录锚定（gitignore 中 secrets/ 仅匹配目录）。本适配器原样透传，行为以 opencode
+// 实际 glob 引擎为准；若需严格的目录锚定语义，同样应优先选用 claudecode 适配器。
 //
 // 强度声明（诚实标注）：opencode 当前**没有**执行前可编程拦截。
 // 其 permission.ask 插件 hook 虽在 @opencode-ai/plugin 类型定义中存在，
@@ -70,28 +87,46 @@ func (Adapter) Detect(repoRoot string) bool {
 }
 
 // InstallInstructions 给出「如何让 opencode 读取所生成配置」的人类可读说明，
-// 并诚实标注当前限制：本适配器走 config deny 路径，强度为 config（非 hard）；
-// opencode 的 permission.ask 插件 hook 当前不被触发（issue #7006），故无法做执行前拦截。
+// 并诚实标注当前限制：
+//   - 本适配器走 config deny/allow 路径，强度为 config（非 hard）；
+//   - opencode 的 permission.ask 插件 hook 当前不被触发（issue #7006），故无法做执行前拦截；
+//   - opencode glob 无 gitignore 取反/顺序语义，本适配器用「更具体的 allow 覆盖宽泛 deny」
+//     近似实现取反，复杂取反链可能有边缘差异；
+//   - 带尾斜杠 pattern（如 secrets/）按目录锚定的行为以 opencode glob 引擎为准。
 func (Adapter) InstallInstructions() string {
-	return "已生成 opencode.json（permission.read deny）。opencode 启动时自动读取该配置并按 glob 拒绝文件读取。" +
+	return "已生成 opencode.json（permission.read deny/allow）。opencode 启动时自动读取该配置并按 glob 决定文件读取。" +
 		"注意：本适配器强度为 config（非 hard）——opencode 的 permission.ask 可编程 hook 当前不被触发（issue #7006），" +
-		"故无法做到执行前硬拦，防护依赖 opencode 忠实加载配置。"
+		"故无法做到执行前硬拦，防护依赖 opencode 忠实加载配置。" +
+		"另：opencode glob 无 gitignore 取反/顺序语义，本适配器用「更具体的 allow 覆盖宽泛 deny」近似实现放行；" +
+		"复杂取反链（多条 ! 交织）或带尾斜杠目录锚定可能有边缘差异，依赖严格语义请用 claudecode 适配器。"
 }
 
 // Generate 依据 plan 产出单个 opencode.json：把 plan.RawPatterns 逐条翻译成
-// permission.read 的 deny 键（保留取反行 !，opencode 无取反语义但保留以备用户手改）。
+// permission.read 的 glob→decision 键。
 //
-// 产出形态（示例，RawPatterns=[".env","*.pem"]）：
+//   - 普通行（如 ".env"）写入 read[".env"] = "deny"；
+//   - 取反行（如 "!.env.example"，readignore 语义为放行）剥掉前导 ! 后写入
+//     read[".env.example"] = "allow"，依赖 opencode「更具体 glob 覆盖更宽泛」
+//     实现放行（.env.example 比 .env.* 更具体，allow 胜出）。
+//
+// 不在 map 里保留任何带前导 ! 的 key：opencode glob 把 ! 当字面字符，行为未定义，
+// 故 ! 必须剥干净（与既有 claudecode 适配器一致——取反语义在剥 ! 后表达）。
+//
+// 产出形态（示例，RawPatterns=[".env",".env.*","!.env.example"]）：
 //
 //	{
 //	  "$schema": "https://opencode.ai/config.json",
 //	  "permission": {
 //	    "read": {
 //	      ".env": "deny",
-//	      "*.pem": "deny"
+//	      ".env.*": "deny",
+//	      ".env.example": "allow"
 //	    }
 //	  }
 //	}
+//
+// 取反语义限制：opencode 无 gitignore 顺序/取反求值，「更具体 allow 胜出」是对常见
+// 用例的近似；复杂取反链（多条 ! 交织）可能有边缘差异，详见包 godoc。
 //
 // 设计：
 //   - 只 Generate 配置片段，与既有 opencode.json 的深度合并由阶段5 CLI 完成
@@ -104,6 +139,11 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 
 	read := make(map[string]string, len(patterns))
 	for _, p := range patterns {
+		if actual, ok := stripNegation(p); ok {
+			// readignore 取反 = 放行 → opencode allow（剥掉前导 ! 后的 actual pattern）。
+			read[actual] = "allow"
+			continue
+		}
 		read[p] = "deny"
 	}
 
@@ -131,8 +171,8 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 }
 
 // sanitizePatterns 规整待翻译的 patterns：去空白行与注释行（# 开头）。
-// 与 claudecode 的同名函数语义一致；取反行（!）按调用方意图保留——opencode 无
-// 取反语义，但丢弃会丢失信息（用户可能在 opencode 里手工改成 allow），故原样透传。
+// 与 claudecode 的同名函数语义一致；取反行（!）原样保留——是否剥 ! 由 Generate
+// 调 stripNegation 决定，此处不做形态改写，便于上层独立测试。
 func sanitizePatterns(raw []string) []string {
 	out := make([]string, 0, len(raw))
 	for _, line := range raw {
@@ -143,4 +183,17 @@ func sanitizePatterns(raw []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+// stripNegation 检测 readignore 取反行：前导 ! 触发，剥掉 ! 返回 actual pattern。
+// ok=true 表示确为取反行（调用方应映射到 allow）；ok=false 表示普通行（deny）。
+//
+// 边界：
+//   - 仅单个 ! 触发取反（与 gitignore 一致；!!foo 视为普通行，! 字面保留由 opencode 解释）；
+//   - 仅剥前导 !，不动尾斜杠/内部字符（actual pattern 形态 = readignore 去取反后的 glob）。
+func stripNegation(p string) (actual string, ok bool) {
+	if strings.HasPrefix(p, "!") && len(p) > 1 {
+		return p[1:], true
+	}
+	return p, false
 }
