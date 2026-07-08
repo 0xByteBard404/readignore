@@ -66,6 +66,12 @@ func runInstall(out io.Writer, args []string, all, force bool) error {
 	}
 
 	// 选出要安装的适配器列表。
+	//
+	// 校验顺序说明：--all 分支在 loadPatterns 之前先用 Detect() 过滤出目标适配器，
+	// 故「未检测到任何工具」会先于「.readignore 不存在」报出。这是有意的——
+	// --all 的语义是「为已安装的工具装防护」，连工具都没有时谈规则文件无意义；
+	// 而显式 ID 分支则相反，先校验 ID 再 loadPatterns，让缺 .readignore 的错误
+	// 比缺适配器更早暴露（用户明确知道要装谁）。
 	var targets []adapter.Adapter
 	if all {
 		every := adapter.All()

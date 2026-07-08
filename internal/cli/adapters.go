@@ -52,6 +52,9 @@ func runAdapters(out io.Writer, all []adapter.Adapter) error {
 	}
 
 	// tabwriter 对齐表格列；minwidth=0、tabwidth=2、padding=2 兼顾紧凑与可读。
+	// 注意：tabwriter 按 byte 计宽，若未来加入非 ASCII ID（如东亚字符 ID），
+	// 其显示宽度（多为 2 个 cell）与 byte 数不一致，列对齐会偏。届时需换对齐方案
+	// （如手工按 rune 显示宽度填充），当前所有适配器 ID 均为 ASCII 故无此问题。
 	tw := tabwriter.NewWriter(out, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTRENGTH\tDETECTED")
 	for _, a := range all {

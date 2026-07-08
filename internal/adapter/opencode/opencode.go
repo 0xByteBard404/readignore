@@ -19,6 +19,20 @@
 // 用户若依赖复杂取反链应优先选用 claudecode 适配器（PreToolUse hook 完整实现
 // gitignore 取反语义）。
 //
+// 具体反例对照（readignore gitignore 语义 vs opencode glob 特异性近似）：
+//
+//	.readignore:
+//	  *.env          # deny
+//	  !a.env         # allow（取反放行）
+//
+//	- readignore（最后规则胜出）：a.env 命中 !a.env → 放行；b.env 命中 *.env → 拦截。
+//	- opencode（glob 特异性）：read["*.env"]="deny" + read["a.env"]="allow"；
+//	  a.env 比 *.env 更具体 → allow 胜出 → 放行 a.env；b.env 仍 deny。**本例两者一致**。
+//
+//	但更复杂的链可能分歧，例如 deny *.env + !a.env + deny *.env 的子集时，
+//	gitignore 按声明顺序最后命中者胜，而 opencode 仅按 glob 字面特异性裁决，
+//	无顺序概念——此时两者的放行/拦截结果可能不同。这类用例请用 claudecode 适配器。
+//
 // 目录尾斜杠限制声明：opencode 文档未明确带尾斜杠的 pattern（如 secrets/）是否
 // 按目录锚定（gitignore 中 secrets/ 仅匹配目录）。本适配器原样透传，行为以 opencode
 // 实际 glob 引擎为准；若需严格的目录锚定语义，同样应优先选用 claudecode 适配器。
@@ -124,6 +138,12 @@ func (Adapter) InstallInstructions() string {
 //	    }
 //	  }
 //	}
+//
+// 注意：上面示例里 read 的键顺序看似与 RawPatterns 一致，但那是巧合——Go map 经
+// encoding/json 序列化时**按 key 字母序**输出（见 encoding/json 文档），与本适配器
+// 写入 map 的先后无关。此处顺序无关紧要：opencode 的 glob 匹配不依赖键顺序
+// （它靠 glob 特异性而非声明顺序求值，详见下方「取反语义限制」），所以字母序排列
+// 不影响最终 deny/allow 决策。
 //
 // 取反语义限制：opencode 无 gitignore 顺序/取反求值，「更具体 allow 胜出」是对常见
 // 用例的近似；复杂取反链（多条 ! 交织）可能有边缘差异，详见包 godoc。

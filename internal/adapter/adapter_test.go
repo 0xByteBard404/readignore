@@ -42,6 +42,9 @@ func (s *stubAdapter) Generate(plan Plan) ([]GeneratedFile, error) {
 func (s *stubAdapter) InstallInstructions() string { return s.stubInstructions }
 
 // withCleanRegistry 把 registry 重置为空并在测试结束恢复，保证测试间隔离。
+//
+// 注意：非 t.Parallel 安全——它操作的是包级全局 registry 单例，并发跑会互相
+// 踩踏 order/items。本文件所有用到 registry 的测试均不可加 t.Parallel()。
 func withCleanRegistry(t *testing.T) {
 	t.Helper()
 	origItems := registry.items
@@ -136,6 +139,19 @@ func TestRegister_NilIsNoop(t *testing.T) {
 	assert.False(t, ok)
 }
 
+// Register(空ID) 是空操作：ID()=="" 的适配器不登记、不 panic、不污染 order。
+// 空 ID 是 registry 的无效键（Get("") 永远 false），登记它只会制造噪音。
+// 防御性契约，与 Register(nil) 同档（M2 polish）。
+func TestRegister_EmptyIDIsNoop(t *testing.T) {
+	withCleanRegistry(t)
+
+	Register(&stubAdapter{stubID: "", stubStrength: StrengthHard})
+
+	assert.Empty(t, All(), "empty-ID adapter must not be registered")
+	_, ok := Get("")
+	assert.False(t, ok)
+}
+
 // All_StableOrder 验证 All() 返回顺序遵循注册顺序（CLI 按稳定顺序列出适配器）。
 func TestAll_StableOrder(t *testing.T) {
 	withCleanRegistry(t)
@@ -215,23 +231,16 @@ func TestStrength_AllVariantsUsable(t *testing.T) {
 	withCleanRegistry(t)
 
 	for _, tc := range []struct {
-		id    string
-		st    Strength
-		want  Strength
+		id   string
+		want Strength
 	}{
-		{"h", StrengthHard, StrengthHard},
-		{"c", StrengthConfig, StrengthConfig},
-		{"s", StrengthSoft, StrengthSoft},
+		{"h", StrengthHard},
+		{"c", StrengthConfig},
+		{"s", StrengthSoft},
 	} {
-		Register(&stubAdapter{stubID: tc.id, stubStrength: tc.st})
+		Register(&stubAdapter{stubID: tc.id, stubStrength: tc.want})
+		got, ok := Get(tc.id)
+		assert.True(t, ok)
+		assert.Equal(t, tc.want, got.Strength())
 	}
-	got, ok := Get("h")
-	assert.True(t, ok)
-	assert.Equal(t, StrengthHard, got.Strength())
-	got, ok = Get("c")
-	assert.True(t, ok)
-	assert.Equal(t, StrengthConfig, got.Strength())
-	got, ok = Get("s")
-	assert.True(t, ok)
-	assert.Equal(t, StrengthSoft, got.Strength())
 }

@@ -73,6 +73,11 @@ func (Adapter) InstallInstructions() string {
 //   - sh 仅做 JSON 字段抽取（grep，无 jq 依赖），匹配判定全在 py 里，便于跨平台
 //     （sh 里只调 python，不在 bash 里重写匹配逻辑）；
 //   - settings.json 只 Generate PreToolUse 片段，与既有 settings 的合并由 CLI 完成。
+//
+// 已知限制（YAGNI，不在 v0.1.0 修功能，仅文档诚实标注）：生成的 python 引擎不区分
+// 目录与文件——`foo/` 这类「仅目录」模式会命中非目录的 `foo`（hook 拿到的候选路径
+// 不带尾斜杠，引擎也无 stat 调用）。这是安全侧偏置（多拦而非少拦）：被多拦的普通
+// 文件 foo 仍可由用户加 `!foo` 取反放行。严格的目录/文件区分留待后续版本。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 	patterns := sanitizePatterns(plan.RawPatterns)
 	return []adapter.GeneratedFile{

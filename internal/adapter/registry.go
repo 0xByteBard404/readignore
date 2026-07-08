@@ -18,16 +18,25 @@ var registry = &adapterRegistry{items: make(map[string]Adapter)}
 //
 // 行为：
 //   - 同 ID 二次注册时后者覆盖前者（便于测试与覆盖式加载）；
-//   - 注册顺序被保留，[All] 按此顺序返回，CLI 列表输出因此稳定。
+//   - 注册顺序被保留，[All] 按此顺序返回，CLI 列表输出因此稳定；
+//   - a 为 nil 或 a.ID()=="" 时跳过（防御性：ID 是 CLI 参数/registry 索引，
+//     空串既是无效键也模糊"未指定"，登记它只会污染注册表；选静默跳过 + 注释
+//     而非 panic，避免某适配器误实现直接拖垮整个进程启动）。
 //
-// a 为 nil 时不做任何事（防御性：避免 init() 误登记空适配器导致后续空指针）。
+// 实现约束：各适配器的 ID() 应返回全小写、无空格、跨版本不变的稳定短标识；
+// 调用 Register 前应自检 ID() 非空。
 func Register(a Adapter) {
 	if a == nil {
 		return
 	}
+	id := a.ID()
+	if id == "" {
+		// 空 ID 不登记：它是 registry 的无效键（Get("") 永远 false），
+		// 也无法作为 CLI 参数。静默跳过比 panic 更稳妥（init() 不应拖垮进程）。
+		return
+	}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
-	id := a.ID()
 	if _, exists := registry.items[id]; !exists {
 		registry.order = append(registry.order, id)
 	}

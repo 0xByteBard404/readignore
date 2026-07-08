@@ -98,6 +98,10 @@ func adapterInstallStatus(repoRoot string, a adapter.Adapter) string {
 			exist++
 		}
 	}
+	// 假设各适配器在空规则下仍返回 >0 个产物文件（claudecode 恒返 3 件、
+	// opencode 恒返 1 件，均与规则数无关）。若未来某适配器在空规则时返回 0 文件，
+	// 本 switch 的 "not installed" 分支会与 "installed" 混淆（0/0 命中 case 0）；
+	// 届时需把 0 文件的适配器单独标注为 "n/a" 或类似。
 	switch exist {
 	case 0:
 		return "not installed"

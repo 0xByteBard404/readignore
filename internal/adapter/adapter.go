@@ -42,7 +42,8 @@ type GeneratedFile struct {
 	Path string
 	// Content 文件完整内容（UTF-8 文本）。
 	Content string
-	// Mode 文件权限位（如 0644 / 0755）；0 表示由调用方使用默认权限。
+	// Mode 文件权限位（如 0644 / 0755）；为 0 表示由调用方使用默认权限
+	// （典型：配置文件 0644、可执行 hook 0755）。详见类型级 doc 的「默认」语义。
 	Mode uint32
 }
 
@@ -51,8 +52,11 @@ type GeneratedFile struct {
 type Plan struct {
 	// RepoRoot 仓库根的绝对路径。适配器可据此 Detect 已安装工具、解析相对路径。
 	RepoRoot string
-	// MatchedPaths 命中 .readignore 的路径（相对仓库根，POSIX 风格）。
-	// 主要用于上下文/日志；生成配置通常以 RawPatterns 为准（更稳定、无遗漏）。
+	// MatchedPaths 当前仓库根下命中 .readignore 规则的路径集合
+	// （相对仓库根、POSIX 风格 `/` 分隔；由调用方/CLI 用 gitignore 语义对工作树
+	// 扫描得出，通常按字典序去重）。主要供日志/上下文展示与未来内容差异比对使用；
+	// 适配器做匹配时应**直接用 RawPatterns**——以原始规则为单一事实源更稳定、
+	// 无遗漏（MatchedPaths 是某次扫描的快照，可能因仓库内容变化而过时）。
 	MatchedPaths []string
 	// RawPatterns .readignore 的原始规则行（已去注释/空行，保留取反行）。
 	// 适配器生成各工具原生防护配置时应直接引用本字段，而非再次猜测用户书写。
