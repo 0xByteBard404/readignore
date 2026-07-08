@@ -17,7 +17,8 @@ import (
 type Pattern struct {
 	// Raw 是 .readignore 中的原始规则文本（不含行尾换行；注释/空行不会进入 Pattern）。
 	Raw string
-	// gitPattern 是 go-git 解析后的模式，负责实际的命中判断。
+	// gitPattern 持有 go-git 解析后的模式，负责实际的命中判断。
+	// 未导出以避免泄漏 go-git 实现细节，保持本包对外 API 稳定。
 	gitPattern gitignore.Pattern
 }
 
@@ -38,6 +39,8 @@ type Matcher struct {
 //   - `*` / `**` / `?` 通配，`/` 锚定目录，`*.ext` 后缀匹配。
 //
 // 注释与空行不会进入返回的 Patterns。
+//
+// 当前实现不会返回非 nil error；保留 error 返回值供未来语法校验扩展。
 func Parse(content string) (*Matcher, error) {
 	if content == "" {
 		return &Matcher{Patterns: nil, matcher: gitignore.NewMatcher(nil)}, nil
@@ -80,12 +83,12 @@ func (m *Matcher) Matches(p string) bool {
 	if m == nil || m.matcher == nil {
 		return false
 	}
-	// 统一分隔符：Windows `\` -> `/`，再用 path 包切分。
+	// 统一分隔符：Windows `\` -> `/`，再用 strings.Split 按 / 切分。
 	slashPath := p
 	if strings.ContainsRune(p, '\\') {
 		slashPath = strings.ReplaceAll(p, "\\", "/")
 	}
-	// path.Split 用于识别是否目录路径（末尾 `/`）。
+	// 末尾 `/` 用于识别是否目录路径。
 	isDir := strings.HasSuffix(slashPath, "/")
 	// 去掉末尾分隔符后按 / 切分。
 	clean := strings.TrimSuffix(slashPath, "/")
