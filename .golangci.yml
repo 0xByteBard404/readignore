@@ -11,10 +11,7 @@ run:
   go: "1.25"
   # 给 linter 足够时间跑完整仓 (大表 testdata 偶尔慢)。
   timeout: 5m
-  # 排除构建产物与第三方目录。
-  skip-dirs:
-    - dist
-    - vendor
+  # 注: 目录排除已迁移到 issues.exclude-dirs (run.skip-dirs 在新版被弃用)。
   # testdata 目录由各包自行用 // nolint 处理，不在此全局排除。
 
 linters:
@@ -53,6 +50,10 @@ issues:
   # 不自动 fix（CI 只报告，由开发者本地 golangci-lint run --fix 处理）。
   fix: false
   exclude-use-default: true
+  # 目录排除 (run.skip-dirs 迁移至此；新版非弃用形式)。
+  exclude-dirs:
+    - dist
+    - vendor
   exclude-rules:
     # 测试文件：errcheck 对 _test.go 放宽（测试里常见故意忽略 error 的断言场景），
     # 但保留 govet/staticcheck/gosec 等仍生效。仅排除 errcheck，避免误报淹没真问题。
