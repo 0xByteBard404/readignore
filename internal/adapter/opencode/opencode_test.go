@@ -204,7 +204,7 @@ func TestAdapter_Generate_NegationBecomesAllow_MultipleCases(t *testing.T) {
 	files, err := a.Generate(adapter.Plan{
 		RawPatterns: []string{
 			"*.env",
-			"!.env.sample",      // basename 取反
+			"!.env.sample",       // basename 取反
 			"!deploy/secret.pem", // 子目录路径取反
 		},
 	})

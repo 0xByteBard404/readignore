@@ -10,17 +10,17 @@ import (
 // stubAdapter 是测试用 Adapter 实现：用字段记录调用，验证接口契约与 registry 行为。
 // 故意放在本包内（非 _test 子包），以便同时验证导出的 Register/All/Get。
 type stubAdapter struct {
-	stubID          string
-	stubStrength    Strength
-	stubDetect      bool
-	stubFiles       []GeneratedFile
-	stubErr         error
+	stubID           string
+	stubStrength     Strength
+	stubDetect       bool
+	stubFiles        []GeneratedFile
+	stubErr          error
 	stubInstructions string
 
 	// 调用记录
-	detectRepoRoot  string
-	generateCalled  bool
-	generatePlan    Plan
+	detectRepoRoot string
+	generateCalled bool
+	generatePlan   Plan
 }
 
 func (s *stubAdapter) ID() string         { return s.stubID }
@@ -72,10 +72,10 @@ func TestRegister_All_Get_Contract(t *testing.T) {
 	withCleanRegistry(t)
 
 	stub := &stubAdapter{
-		stubID:          "stub-tool",
-		stubStrength:    StrengthHard,
-		stubDetect:      true,
-		stubFiles:       []GeneratedFile{{Path: "a.txt", Content: "x", Mode: 0644}},
+		stubID:           "stub-tool",
+		stubStrength:     StrengthHard,
+		stubDetect:       true,
+		stubFiles:        []GeneratedFile{{Path: "a.txt", Content: "x", Mode: 0644}},
 		stubInstructions: "do X",
 	}
 	Register(stub)
@@ -195,9 +195,9 @@ func TestStubAdapter_DetectAndGenerate_Delegate(t *testing.T) {
 
 	// Generate 透传 plan 并返回预设文件
 	plan := Plan{
-		RepoRoot:       "/repo/root",
-		MatchedPaths:   []string{".env", "secret.pem"},
-		RawPatterns:    []string{".env", "*.pem"},
+		RepoRoot:     "/repo/root",
+		MatchedPaths: []string{".env", "secret.pem"},
+		RawPatterns:  []string{".env", "*.pem"},
 	}
 	files, err := got.Generate(plan)
 	assert.NoError(t, err)

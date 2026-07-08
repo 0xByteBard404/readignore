@@ -144,9 +144,9 @@ func TestIntegration_PipeTest_RealGeneratedScripts(t *testing.T) {
 	patterns := []string{".env", ".env.*", "!.env.example", "*.pem", "**/id_rsa", ".env.local", ".env.production"}
 
 	plan := adapter.Plan{
-		RepoRoot:       "/repo/root", // 仅占位；真跑用临时目录。
-		MatchedPaths:   nil,           // 不参与匹配，留空。
-		RawPatterns:    patterns,
+		RepoRoot:     "/repo/root", // 仅占位；真跑用临时目录。
+		MatchedPaths: nil,          // 不参与匹配，留空。
+		RawPatterns:  patterns,
 	}
 	repoRoot := writeHookFiles(t, plan)
 
@@ -271,6 +271,7 @@ func TestGenerate_PatternsWithSpecialChars(t *testing.T) {
 // 这一组与 go-git 权威 matcher 对齐：
 //   - foo/bar    只匹配根 foo/bar，不匹配 sub/foo/bar（I-1）
 //   - /leading   匹配根 leading，不匹配 sub/leading（I-2）
+//
 // 同时保证 basename 模式（无斜杠）仍任意层级匹配（不回归）。
 func TestIntegration_RootAnchoring_SlashPatterns(t *testing.T) {
 	plan := adapter.Plan{
