@@ -84,3 +84,25 @@ func TestParse_OnlyCommentsAndBlanks(t *testing.T) {
 	assert.Empty(t, p.Patterns)
 	assert.False(t, p.Matches("foo"))
 }
+
+// TestMatches_DirectoryTrailingSlash 锁定 go-git 对「目录尾斜杠」语义的真实行为：
+//
+//	模式 `build/`（以 `/` 结尾）仅匹配名为 build 的【目录】，不匹配同名普通文件。
+//
+// 实测（go-git v5.19.1）：
+//   - Matches("build/")    == true  （目录路径命中目录模式）
+//   - Matches("build")     == false （无尾斜杠视为普通文件，不命中目录模式）
+//
+// 该契约为阶段3/4 适配器（生成各 agent 原生防护配置）所依赖，特此钉住。
+func TestMatches_DirectoryTrailingSlash(t *testing.T) {
+	p, err := Parse("build/\n")
+	assert.NoError(t, err)
+
+	// 目录路径（带尾斜杠）命中目录模式 build/
+	assert.True(t, p.Matches("build/"))
+	// 普通文件路径（无尾斜杠）不命中目录模式 build/
+	assert.False(t, p.Matches("build"))
+	// 目录内子路径仍命中
+	assert.True(t, p.Matches("build/foo"))
+	assert.True(t, p.Matches("build/sub/"))
+}
