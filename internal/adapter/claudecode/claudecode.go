@@ -151,6 +151,10 @@ fi
 
 # tool_input 字段抽取。Claude Code 实际 JSON: {"tool_name":"...","tool_input":{"<field>":"<value>"}}。
 # 抽取策略：对每个支持字段尝试 grep -oE，命中任一即拿去判定（多命中也只判第一个）。
+#
+# 已知限制（M-4，记录不改）：grep -oE 用 [^"]* 截取 value，路径里含未转义双引号
+# （罕见但理论可能）会被截断。Claude Code 的 tool_input 路径均经 JSON 转义（" → \"），
+# 故正常输入不受影响；此处仅备注边界。
 extract_field() {
   local input="$1"
   local field="$2"
@@ -261,20 +265,38 @@ import sys
 
 
 def _glob_to_regex(glob):
-    """把单条 gitignore glob（已剥离前导 !）编译成 re。
+    """把单条 gitignore glob（已剥离前导 ! 与尾 /）编译成 (regex, anchored_to_root)。
 
-    规则（与 go-git/gitignore 对齐）：
-      * /  : 目录锚定；多段时按路径分隔逐段匹配；
-      * ** : 跨任意层级（含零层）；
-      * *  : 单层内任意字符（不跨 /）；
-      * ?  : 单个非 / 字符；
-      * 无 /: basename 模式（匹配任意层级下的同名条目）；
-      * 尾 /: 仅匹配目录（调用方在候选末尾加 / 即可识别）。
+    返回值：
+      - regex             : 已编译的 re.Pattern。
+      - anchored_to_root  : 是否锚定到仓库根（含内部 / 或前导 / 时为 True）。
+
+    锚定规则（与 go-git/gitignore 对齐，I-1/I-2 修复）：
+      * 含「内部斜杠」（首字符之外某处的 /）→ anchored_to_root=True，
+        正则只以 ^ 开头，不允许匹配路径中间（foo/bar 不应匹配 sub/foo/bar）。
+      * 前导 /  → 去掉前导 /，标记 anchored_to_root=True，正则以 ^ 开头
+        （/leading 应匹配根 leading，不匹配 sub/leading）。
+      * **/ 前缀 → 任意层级目录前缀（含零层），不算根锚定（仍可任意层级匹配）。
+      * 无 /    → basename 模式，等价 **/<glob>，匹配任意层级下的同名条目。
+
+    其它通配：
+      * ** : 跨任意层级（含零层）；*  : 单层内任意非 / 字符；?  : 单个非 / 字符；
+      * [...]  : 字符类（M-1），透传为正则字符类；不闭合的 [ 当字面。
     """
-    # basename 锚定的模式（无 / 分隔）等价于 **/<glob>。
-    has_slash = "/" in (glob[:-1] if glob.endswith("/") else glob)
-    if not has_slash and not glob.startswith("/"):
+    # 先判定根锚定：前导 / 或去掉前导 / 后仍含内部 /。
+    anchored_to_root = False
+    if glob.startswith("/"):
+        anchored_to_root = True
+        glob = glob[1:]
+    elif "/" in glob:
+        # 含内部斜杠即根锚定（basename 模式由下方 **/ 分支处理，不会到这里）。
+        anchored_to_root = True
+
+    # basename 锚定的模式（去掉前导 / 后若仍无 /）等价于 **/<glob>。
+    # 这一步必须在根锚定判定之后：**/ 前缀不算根锚定（仍允许任意层级匹配）。
+    if not anchored_to_root and not glob.startswith("**/"):
         glob = "**/" + glob
+
     i = 0
     n = len(glob)
     out = []
@@ -300,11 +322,45 @@ def _glob_to_regex(glob):
             out.append(r"[^/]")
             i += 1
             continue
+        if c == "[":
+            # M-1：字符类 [...]。寻找配对的 ]（[ 后可有可选 ^ 与首字符 ]）。
+            j = i + 1
+            negate = False
+            if j < n and glob[j] == "!":
+                # gitignore 用 [!abc] 取反（与正则 [^abc] 一致）。
+                negate = True
+                j += 1
+            elif j < n and glob[j] == "^":
+                # 容错：少数用户写 [^abc]，按正则习惯当取反。
+                negate = True
+                j += 1
+            # ] 紧跟在 [ / [^ 之后视为字面 ]（POSIX 规则）。
+            if j < n and glob[j] == "]":
+                j += 1
+            close = glob.find("]", j)
+            if close == -1:
+                # 未闭合的 [ 当字面 [ 处理，避免破坏正则。
+                out.append(re.escape("["))
+                i += 1
+                continue
+            body = glob[i + 1:close]
+            # gitignore 字符类语法简单：列字符即可，区间用 -，[!abc]/[^abc] 取反。
+            # 直接把体内文本透传为正则字符类（与 go-git 行为一致）。
+            cls = ("^" if negate else "") + body
+            out.append("[" + cls + "]")
+            i = close + 1
+            continue
         # 其它字符按 re 字面转义。
         out.append(re.escape(c))
         i += 1
     pattern = "".join(out)
-    return re.compile(r"(?:^|/)" + pattern + r"(?:/|$)")
+    if anchored_to_root:
+        # 根锚定：只允许 ^ 开头（不允许中间 / 匹配）。
+        full = r"^" + pattern + r"(?:/|$)"
+    else:
+        # basename / **/ 前缀：允许在任意层级匹配（含路径中间）。
+        full = r"(?:^|/)" + pattern + r"(?:/|$)"
+    return re.compile(full), anchored_to_root
 
 
 class Rule:
@@ -317,7 +373,9 @@ class Rule:
         self.negated = raw.startswith("!")
         pat = raw[1:] if self.negated else raw
         # 仅目录模式：去尾 / 后，候选路径补尾 / 仍能命中（regex 末尾 (?:/|$) 已兼容）。
-        self.regex = _glob_to_regex(pat.rstrip("/") if pat.endswith("/") else pat)
+        body = pat.rstrip("/") if pat.endswith("/") else pat
+        regex, _ = _glob_to_regex(body)
+        self.regex = regex
 
 
 `
@@ -358,8 +416,8 @@ def matches_command(command):
     if command is None:
         return False
     # 用一组常见分隔符切（保守：不破坏文件名里的 . _ - +）。Windows 路径 \\ 留给 matches 规范化。
-    import re as _re
-    tokens = _re.split(r"[\s|;<>&\"'` + "`" + `()]+", command)
+    # 直接用模块顶已 import 的 re，无需局部再 import（M-3 清理）。
+    tokens = re.split(r"[\s|;<>&\"'` + "`" + `()]+", command)
     for tok in tokens:
         if not tok:
             continue
@@ -411,8 +469,9 @@ func pythonListLiteral(items []string) string {
 	return b.String()
 }
 
-// pythonRepr 渲染单个字符串为 Python 双引号字面量，转义反斜杠、双引号、换行等，
-// 保证含特殊字符的 pattern 不会破坏生成的 python 语法。
+// pythonRepr 渲染单个字符串为 Python 双引号字面量，转义反斜杠、双引号、换行、
+// 及所有控制字符（NUL/VT/FF/DEL 等），保证含特殊字符的 pattern 不会破坏生成的
+// python 语法（M-2：控制字符直出会让 .py 文件 SyntaxError）。
 func pythonRepr(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -429,7 +488,14 @@ func pythonRepr(s string) string {
 		case '\t':
 			b.WriteString(`\t`)
 		default:
-			b.WriteRune(r)
+			// 控制字符（C0 控制码 0x00-0x1F 与 DEL 0x7F）必须以 \xNN 转义，
+			// 否则生成的 .py 文件含裸控制字符会触发 SyntaxError。
+			// 0x7f (DEL) 是控制字符但不算 printable，单独转义。
+			if r < 0x20 || r == 0x7f {
+				fmt.Fprintf(&b, `\x%02x`, r)
+			} else {
+				b.WriteRune(r)
+			}
 		}
 	}
 	b.WriteByte('"')

@@ -264,3 +264,109 @@ func TestGenerate_PatternsWithSpecialChars(t *testing.T) {
 	_ = out
 	assert.Equal(t, 0, code, "python must not crash on special chars; stderr=%s", stderr)
 }
+
+// TestIntegration_RootAnchoring_SlashPatterns 验证 I-1/I-2 修复：含斜杠（含前导斜杠）
+// 的 pattern 必须锚定到仓库根，不允许匹配路径中间。
+//
+// 这一组与 go-git 权威 matcher 对齐：
+//   - foo/bar    只匹配根 foo/bar，不匹配 sub/foo/bar（I-1）
+//   - /leading   匹配根 leading，不匹配 sub/leading（I-2）
+// 同时保证 basename 模式（无斜杠）仍任意层级匹配（不回归）。
+func TestIntegration_RootAnchoring_SlashPatterns(t *testing.T) {
+	plan := adapter.Plan{
+		RawPatterns: []string{"foo/bar", "/leading", "secret.pem", "**/id_rsa"},
+	}
+	repoRoot := writeHookFiles(t, plan)
+
+	// I-1：含内部斜杠锚定根。
+	t.Run("I-1 foo/bar anchored to root", func(t *testing.T) {
+		denyCase(t, repoRoot, "foo/bar at root → deny", "Read", "file_path", "foo/bar")
+		allowCase(t, repoRoot, "sub/foo/bar → ALLOW (anchored, not mid-path)", "Read", "file_path", "sub/foo/bar")
+		allowCase(t, repoRoot, "xfoo/bar → ALLOW (prefix anchored)", "Read", "file_path", "xfoo/bar")
+	})
+
+	// I-2：前导斜杠匹配根。
+	t.Run("I-2 /leading matches root leading", func(t *testing.T) {
+		denyCase(t, repoRoot, "leading at root → deny (前导斜杠匹配根)", "Read", "file_path", "leading")
+		allowCase(t, repoRoot, "sub/leading → ALLOW", "Read", "file_path", "sub/leading")
+		allowCase(t, repoRoot, "leadings → ALLOW (suffix anchored)", "Read", "file_path", "leadings")
+	})
+
+	// 回归保护：basename 模式（无斜杠）仍任意层级匹配。
+	t.Run("regression secret.pem basename any level", func(t *testing.T) {
+		denyCase(t, repoRoot, "secret.pem at root → deny", "Read", "file_path", "secret.pem")
+		denyCase(t, repoRoot, "a/secret.pem → deny (basename any level)", "Read", "file_path", "a/secret.pem")
+		allowCase(t, repoRoot, "xsecret.pem → ALLOW", "Read", "file_path", "xsecret.pem")
+	})
+
+	// 回归保护：**/x 仍任意层级。
+	t.Run("regression **/id_rsa any level", func(t *testing.T) {
+		denyCase(t, repoRoot, "id_rsa at root → deny", "Read", "file_path", "id_rsa")
+		denyCase(t, repoRoot, "sub/dir/id_rsa → deny", "Read", "file_path", "sub/dir/id_rsa")
+	})
+}
+
+// TestIntegration_CharClasses 验证 M-1：gitignore 字符类 [...] 支持。
+// go-git 支持 *.[cho] 匹配 .c/.h/.o（单字符集）；python 引擎须同样支持。
+func TestIntegration_CharClasses(t *testing.T) {
+	plan := adapter.Plan{
+		RawPatterns: []string{"*.[cho]"},
+	}
+	repoRoot := writeHookFiles(t, plan)
+
+	denyCase(t, repoRoot, "main.o → deny (char class)", "Read", "file_path", "main.o")
+	denyCase(t, repoRoot, "main.c → deny", "Read", "file_path", "main.c")
+	denyCase(t, repoRoot, "main.h → deny", "Read", "file_path", "main.h")
+	allowCase(t, repoRoot, "main.txt → ALLOW (not in class)", "Read", "file_path", "main.txt")
+	allowCase(t, repoRoot, "main.cho → ALLOW (single char class, not multi)", "Read", "file_path", "main.cho")
+}
+
+// TestIntegration_InjectSafety 验证 pythonRepr 改动（M-2 控制字符转义）后，
+// patterns 含 " / \ / 恶意 python 代码仍被安全转义为字面字符串，不会被解释执行。
+func TestIntegration_InjectSafety(t *testing.T) {
+	// 这条 pattern 试图逃逸字面量注入恶意 python："] + [__import__("os").system("x")
+	// 必须被当作「文件名」字面匹配，绝不执行 os.system。
+	plan := adapter.Plan{
+		RawPatterns: []string{
+			`"] + [__import__("os").system("x")`,
+			`normal.pem`,
+		},
+	}
+	repoRoot := writeHookFiles(t, plan)
+
+	// 真跑：python 必须不报语法/执行错，且这条 pattern 仅作为字面文件名匹配。
+	out, stderr, code := pipeTest(t, repoRoot, denyJSON("Read", "file_path", "main.go"))
+	assert.Equal(t, 0, code, "inject pattern must not break python; stderr=%s", stderr)
+	assert.NotContains(t, out, `"permissionDecision":"deny"`,
+		"inject pattern must not match unrelated main.go; out=%s", out)
+	// stderr 里不应出现任何 os.system 副作用（如 shell 报错）。
+	assert.NotContains(t, stderr, "system")
+}
+
+// TestPythonRepr_ControlChars 验证 M-2：pythonRepr 对控制字符（NUL/VT/FF/DEL）转义为
+// \xNN，避免生成的 .py 文件含裸控制字符触发 SyntaxError。这里直接断言产物字符串。
+func TestPythonRepr_ControlChars(t *testing.T) {
+	a := Adapter{}
+	// 含 NUL(\x00) / VT(\x0b) / FF(\x0c) / DEL(\x7f) 的 pattern。
+	files, err := a.Generate(adapter.Plan{
+		RawPatterns: []string{"bad" + string([]byte{0x00, 0x0b, 0x0c, 0x7f}) + "name"},
+	})
+	require.NoError(t, err)
+	require.Len(t, files, 3)
+
+	byPath := map[string]adapter.GeneratedFile{}
+	for _, f := range files {
+		byPath[f.Path] = f
+	}
+	py, ok := byPath[".claude/hooks/readignore.py"]
+	require.True(t, ok)
+	// 不得含裸控制字符；必须以 \xNN 转义形式出现。
+	for _, c := range []byte{0x00, 0x0b, 0x0c, 0x7f} {
+		assert.NotContainsf(t, py.Content, string(c),
+			"control char 0x%02x must be escaped, not raw", c)
+	}
+	assert.Contains(t, py.Content, `\x00`)
+	assert.Contains(t, py.Content, `\x0b`)
+	assert.Contains(t, py.Content, `\x0c`)
+	assert.Contains(t, py.Content, `\x7f`)
+}
