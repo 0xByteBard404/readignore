@@ -28,18 +28,21 @@ func newAdaptersCmd() *cobra.Command {
 本命令不依赖 .readignore，任何目录都能查看支持的适配器。`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runAdapters(cmd.OutOrStdout())
+			// 把取列表抽成实参注入，使「registry 为空 = 构建错误」分支可单测
+			// （全局 registry 在包级 blank import 后恒非空，无法用真实 registry 触发空分支）。
+			return runAdapters(cmd.OutOrStdout(), adapter.All())
 		},
 	}
 	return cmd
 }
 
 // runAdapters 是 adapters 命令的核心实现，独立于 cobra 便于测试。
-func runAdapters(out io.Writer) error {
-	all := adapter.All()
+// all 为当前 registry 快照，由调用方传入（生产代码传 adapter.All()）。
+func runAdapters(out io.Writer, all []adapter.Adapter) error {
 	if len(all) == 0 {
-		writeOut(out, "（无已注册适配器；请确认编译时已 blank import 各适配器包）\n")
-		return nil
+		// registry 为空 = 构建问题（blank import 未触发各适配器 init() 自登记）。
+		// 这不是正常状态，应让 CLI exit 非 0，而不是伪装成「无适配器也算成功」。
+		return fmt.Errorf("未发现任何已注册适配器——这通常是构建问题（blank import 未生效）")
 	}
 
 	repoRoot, err := resolveRepoRoot()

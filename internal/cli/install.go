@@ -95,28 +95,55 @@ func runInstall(out io.Writer, args []string, all, force bool) error {
 		RawPatterns: rawPatterns,
 	}
 
+	var aggErr error
 	for _, a := range targets {
 		files, genErr := a.Generate(plan)
 		if genErr != nil {
 			return fmt.Errorf("适配器 %s 生成失败: %w", a.ID(), genErr)
 		}
-		installed, skipped := writeGeneratedFiles(out, repoRoot, a.ID(), files, force)
+		installed, skipped, failed, total := writeGeneratedFiles(out, repoRoot, a.ID(), files, force)
 		fmt.Fprintf(out, "适配器 %s：%d 个文件写入，%d 个已跳过（已存在）。\n", a.ID(), installed, skipped)
-		writeOut(out, a.InstallInstructions())
-		writeOut(out, "\n")
+		// 仅当真正写入 ≥1 个文件时才打印 InstallInstructions（含「已写入...无需重启」
+		// 等关键文案）——旧实现无脑打印，在「0 个文件写入」时会自相矛盾。
+		if installed > 0 {
+			writeOut(out, a.InstallInstructions())
+			writeOut(out, "\n")
+		} else if failed > 0 {
+			// 有失败但无成功：写盘结果为空，不误导用户「已写入」。失败明细/汇总错误
+			// 已在 writeGeneratedFiles 逐条打印、并由下方 aggErr 上报 stderr。
+			writeOut(out, "无文件成功写入（详见上方失败明细）。\n\n")
+		} else {
+			// 全部已存在被跳过、且未传 --force：提示用 --force 覆写。
+			writeOut(out, "未变更（全部已存在；如需覆写加 --force）。\n\n")
+		}
+		if failed > 0 {
+			// 部分文件写失败 → 汇总成 error，最终让 CLI exit 非 0（CI 可感知）。
+			thisErr := fmt.Errorf("适配器 %s 部分文件写入失败（%d/%d 失败）", a.ID(), failed, total)
+			if aggErr == nil {
+				aggErr = thisErr
+			} else {
+				aggErr = fmt.Errorf("%w；%s", aggErr, thisErr.Error())
+			}
+		}
 	}
-	return nil
+	return aggErr
 }
 
-// writeGeneratedFiles 把一组 GeneratedFile 写到 repoRoot 下，返回 (写入数, 跳过数)。
+// writeGeneratedFiles 把一组 GeneratedFile 写到 repoRoot 下，返回
+// (写入数, 跳过数, 失败数, 总数)。
 //
 // 写盘规则（详见 newInstallCmd 的 Long 说明）：
 //   - 目标已存在且非 force：跳过 + 提示手动合并；
 //   - 目标不存在（或 force）：先写父目录（如需），再写文件；
 //   - Mode≠0：写完后 chmod 到目标权限（用八进制）。
 //
+// 失败计数（Mkdir/WriteFile/chmod）向上层暴露：Mkdir/WriteFile 失败计 failed++，
+// 让 runInstall 在「部分文件写失败」时返回 error → CLI exit 非 0（CI 可感知）；
+// chmod 失败仅警告不计 failed（权限降级不阻断写入，文件已落盘）。
+//
 // 抽成独立函数便于测试断言「写了几个、跳过几个、权限是否正确」。
-func writeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []adapter.GeneratedFile, force bool) (installed, skipped int) {
+func writeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []adapter.GeneratedFile, force bool) (installed, skipped, failed, total int) {
+	total = len(files)
 	for _, f := range files {
 		// GeneratedFile.Path 是 POSIX 风格（/ 分隔），跨平台用 ToSlash 再 Join。
 		absPath := filepath.Join(repoRoot, filepath.FromSlash(f.Path))
@@ -131,6 +158,7 @@ func writeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []adap
 		if dir := filepath.Dir(absPath); dir != "" && dir != "." {
 			if mkErr := os.MkdirAll(dir, 0o755); mkErr != nil {
 				fmt.Fprintf(out, "  失败 %s：创建目录失败: %v\n", f.Path, mkErr)
+				failed++
 				continue
 			}
 		}
@@ -141,6 +169,7 @@ func writeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []adap
 		}
 		if writeErr := os.WriteFile(absPath, []byte(f.Content), mode); writeErr != nil {
 			fmt.Fprintf(out, "  失败 %s：%v\n", f.Path, writeErr)
+			failed++
 			continue
 		}
 		// WriteFile 的 mode 受 umask 影响，写完显式 chmod 保证最终权限符合预期
@@ -150,8 +179,14 @@ func writeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []adap
 				fmt.Fprintf(out, "  警告 %s：设置权限失败: %v\n", f.Path, chmodErr)
 			}
 		}
-		fmt.Fprintf(out, "  写入 %s (mode %o)\n", f.Path, f.Mode)
+		// M-1：Mode==0（语义=调用方默认 0644）打印时显式标 default，
+		// 避免用户看到「mode 0」误以为权限是 000（不可读不可执行）。
+		modeLabel := fmt.Sprintf("%o", f.Mode)
+		if f.Mode == 0 {
+			modeLabel = "0644 (default)"
+		}
+		fmt.Fprintf(out, "  写入 %s (mode %s)\n", f.Path, modeLabel)
 		installed++
 	}
-	return installed, skipped
+	return installed, skipped, failed, total
 }

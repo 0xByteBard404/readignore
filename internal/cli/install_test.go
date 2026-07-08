@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/0xByteBard404/readignore/internal/adapter"
 )
 
 // install claude-code：写三个文件，sh 可执行（0755）。
@@ -145,4 +148,70 @@ func TestInstall_NoReadignore_Errors(t *testing.T) {
 	chdirTemp(t)
 	_, err := runCmd(t, []string{"install", "claude-code"})
 	require.Error(t, err)
+}
+
+// I-1：全部产物已存在且未传 --force 时，install 跳过所有文件、installed==0，
+// 此时应打印「未变更」类提示，而【不】打印 InstallInstructions（旧实现会
+// 无脑打「已写入...无需重启」，与「0 个文件写入」自相矛盾）。
+func TestInstall_AllSkipped_NoInstructions(t *testing.T) {
+	chdirTemp(t)
+	writeFile(t, ".", ".readignore", ".env\n")
+	// 预置 opencode.json → install opencode 时全部（单文件）已存在被跳过。
+	writeFile(t, ".", "opencode.json", `{"existing": true}`)
+
+	out, err := runCmd(t, []string{"install", "opencode"})
+	require.NoError(t, err) // 全跳过不算失败
+	assert.Contains(t, out, "0 个文件写入")
+	assert.Contains(t, out, "未变更")
+	// 关键：不应出现 InstallInstructions 文案（opencode 含「已生成 opencode.json」）。
+	assert.NotContains(t, out, "已生成 opencode.json")
+	// claude-code 风格的 InstallInstructions 关键文案也不应出现（防误植）。
+	assert.NotContains(t, out, "无需重启")
+}
+
+// I-2：install 部分文件写失败时 runInstall 应返回 error（CLI exit 非 0，CI 可感知）。
+//
+// 跨平台触发写失败：在 cwd 下预置一个名为 .claude 的【普通文件】。
+// install claude-code 尝试 MkdirAll(.claude/hooks) 时，因 .claude 是文件而非目录
+// 失败（MkdirAll 要求路径段是目录）→ 三个产物写盘均失败 → runInstall 返回 error。
+// 此法不依赖只读目录权限（Windows 不强制），Windows/POSIX 均稳定复现。
+func TestInstall_PartialWriteFailure_ReturnsError(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, ".", ".readignore", ".env\n")
+	// 预置 .claude 为普通文件（阻断 MkdirAll(.claude/hooks)）。
+	require.NoError(t, os.WriteFile(filepath.Join(dir, ".claude"), []byte("block"), 0o644))
+
+	out, err := runCmd(t, []string{"install", "claude-code"})
+	// 三个产物都写失败 → runInstall 返回 error → CLI exit 非 0。
+	require.Error(t, err, "部分文件写失败应返回 error")
+	assert.Contains(t, err.Error(), "部分文件写入失败")
+	// 失败明细打到 stdout。
+	assert.Contains(t, out, "失败")
+}
+
+// I-2 详测：writeGeneratedFiles 在 Mkdir/WriteFile 失败时返回 failed 计数正确。
+// 直接调用内部函数，断言 (installed, skipped, failed, total) 四元组。
+//
+// 触发失败的跨平台方式：把 repoRoot 指向一个【本身是普通文件而非目录】的路径，
+// 使 MkdirAll(repoRoot/.claude/hooks) 失败（MkdirAll 要求路径段是目录）。
+// 这比依赖只读目录权限更可靠（Windows 不强制只读目录的写禁令）。
+func TestWriteGeneratedFiles_FailedCounted(t *testing.T) {
+	dir := chdirTemp(t)
+	// 制造一个「是文件不是目录」的 repoRoot。
+	notADir := filepath.Join(dir, "not-a-dir")
+	require.NoError(t, os.WriteFile(notADir, []byte("I am a file"), 0o644))
+
+	a := mustGetAdapter(t, "claude-code")
+	files, err := a.Generate(adapter.Plan{RepoRoot: dir, RawPatterns: []string{".env"}})
+	require.NoError(t, err)
+	require.Len(t, files, 3)
+
+	buf := &bytes.Buffer{}
+	// repoRoot=普通文件 → 产物路径 join 后的父目录 MkdirAll 必失败。
+	installed, skipped, failed, total := writeGeneratedFiles(buf, notADir, a.ID(), files, false)
+	assert.Equal(t, 3, total)
+	assert.Equal(t, 0, installed)
+	assert.Equal(t, 0, skipped)
+	assert.Equal(t, 3, failed, "三个产物都因 MkdirAll 失败应全部计入 failed")
+	assert.Contains(t, buf.String(), "失败")
 }

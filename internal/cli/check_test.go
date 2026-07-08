@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -82,4 +83,20 @@ func TestAdapterInstallStatus_AllAbsent(t *testing.T) {
 	a := mustGetAdapter(t, "claude-code")
 	got := adapterInstallStatus(dir, a)
 	assert.Equal(t, "not installed", got)
+}
+
+// M-2：.readignore 语法错误时 check 只在 stdout 报告一次，不在 stderr 再打一遍。
+// 用超长单行（超 bufio.Scanner 默认 64KB 缓冲）触发 Parse 的 scanner.Err()，
+// 制造可复现的语法错误路径。断言：命令【不】返回 error（错误已由 stdout 报告），
+// 且 stdout 含「语法错误」。
+func TestCheck_SyntaxError_NotDoublePrinted(t *testing.T) {
+	chdirTemp(t)
+	// 超长行触发 scanner.Err()（bufio.Scanner 默认 token 上限 64KB）。
+	longLine := strings.Repeat("a", 70*1024)
+	writeFile(t, ".", ".readignore", longLine+"\n")
+
+	out, err := runCmd(t, []string{"check"})
+	// M-2：语法错误已在 stdout 报告，命令本身「成功执行了报告」→ 不返回 error。
+	require.NoError(t, err, "语法错误应在 stdout 报告，不应再返回 error 触发 stderr 双打")
+	assert.Contains(t, out, "语法错误")
 }

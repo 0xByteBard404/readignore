@@ -1,10 +1,13 @@
 package cli
 
 import (
+	"bytes"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/0xByteBard404/readignore/internal/adapter"
 )
 
 // adapters 列出全部已注册适配器：至少含 claude-code(hard) 与 opencode(config)。
@@ -45,4 +48,25 @@ func TestAdapters_NoReadignoreRequired(t *testing.T) {
 	chdirTemp(t)
 	_, err := runCmd(t, []string{"adapters"})
 	require.NoError(t, err)
+}
+
+// I-3：registry 为空 = 构建问题（blank import 未生效），应返回 error（CLI exit 非 0），
+// 而非伪装成「无适配器也算成功」。global registry 在包级 blank import 后恒非空，
+// 无法用真实 registry 触发空分支；runAdapters 已抽成可注入 all 参数，此处传 nil 验证。
+func TestAdapters_EmptyRegistry_Errors(t *testing.T) {
+	chdirTemp(t)
+	var buf bytes.Buffer
+	err := runAdapters(&buf, nil) // 注入空列表模拟「registry 为空」
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "未发现任何已注册适配器")
+	assert.Contains(t, err.Error(), "blank import")
+}
+
+// I-3 边界：传入空（非 nil）切片也应报错。
+func TestAdapters_EmptySlice_Errors(t *testing.T) {
+	chdirTemp(t)
+	var buf bytes.Buffer
+	err := runAdapters(&buf, []adapter.Adapter{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "未发现任何已注册适配器")
 }

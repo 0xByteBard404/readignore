@@ -58,7 +58,10 @@ func runCheck(out io.Writer) error {
 
 	if _, parseErr := readignore.Parse(string(content)); parseErr != nil {
 		writeOut(out, fmt.Sprintf("✗ %s 语法错误: %v\n", path, parseErr))
-		return parseErr
+		// check 是「报告」命令：错误已在 stdout 报告（保持报告风格统一），
+		// 此处返回 nil 而非 parseErr——否则 Execute() 会再在 stderr 打一遍，
+		// 同一条语法错误出现两次。check 成功执行了「校验并报告」这一职责。
+		return nil
 	}
 	writeOut(out, fmt.Sprintf("✓ %s 语法合法（%d 字节）\n", path, len(content)))
 
