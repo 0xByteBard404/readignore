@@ -226,3 +226,35 @@ func TestAdapter_Generate_NegationBecomesAllow_MultipleCases(t *testing.T) {
 			"key %q still has leading '!'; opencode glob has no negation", k)
 	}
 }
+
+// TestStripNegation 直接锁定 stripNegation 的返回契约（含 !!foo 这条易被误读的边界）。
+// 表驱动：每条 case 断言 (actual, ok) 的真实返回值，确保后续重构不会无意改动取反判据。
+func TestStripNegation(t *testing.T) {
+	cases := []struct {
+		name       string
+		input      string
+		wantActual string
+		wantOK     bool
+	}{
+		// 空串：不以 ! 开头 → 普通行。
+		{name: "empty", input: "", wantActual: "", wantOK: false},
+		// 单个 !：HasPrefix 命中但 len<=1 拦下 → 普通行，原样返回 "!"。
+		{name: "single bang", input: "!", wantActual: "!", wantOK: false},
+		// !!foo：剥首个 ! 得 "!foo"、ok=true。这是 godoc 必须如实描述的关键边界——
+		// 不是「普通行」，而是会被映射成 allow glob "!foo"（opencode 把 ! 当字面字符，
+		// 恰好匹配名为 !foo 的文件；与 claudecode 适配器一致收敛）。
+		{name: "double bang", input: "!!foo", wantActual: "!foo", wantOK: true},
+		// 标准取反：剥 ! 得 "foo"、ok=true。
+		{name: "negated", input: "!foo", wantActual: "foo", wantOK: true},
+		// 无 ! 前缀：普通行，原样返回。
+		{name: "plain", input: "foo", wantActual: "foo", wantOK: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotActual, gotOK := stripNegation(tc.input)
+			assert.Equal(t, tc.wantActual, gotActual, "actual pattern mismatch")
+			assert.Equal(t, tc.wantOK, gotOK, "ok flag mismatch")
+		})
+	}
+}

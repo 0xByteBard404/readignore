@@ -185,11 +185,19 @@ func sanitizePatterns(raw []string) []string {
 	return out
 }
 
-// stripNegation 检测 readignore 取反行：前导 ! 触发，剥掉 ! 返回 actual pattern。
-// ok=true 表示确为取反行（调用方应映射到 allow）；ok=false 表示普通行（deny）。
+// stripNegation 检测 readignore 取反行：只要 p 以 ! 开头且长度 >1，即视为取反，
+// 剥掉首个 ! 返回 actual pattern。ok=true 表示确为取反行（调用方应映射到 allow）；
+// ok=false 表示普通行（deny）。
 //
-// 边界：
-//   - 仅单个 ! 触发取反（与 gitignore 一致；!!foo 视为普通行，! 字面保留由 opencode 解释）；
+// 边界（!!foo 的处理是关键，godoc 必须与代码一致）：
+//   - "!!foo" 也触发取反：判据是 HasPrefix(p,"!") && len(p)>1，!!foo 同时满足两者，
+//     故只剥首个 ! 得 actual="!foo"、ok=true，最终映射成 allow glob "!foo"。
+//     opencode 的 glob 引擎不识别 ! 前缀，会把 ! 当字面字符，于是 "!foo" 这条 allow
+//     恰好匹配名为 "!foo" 的文件（即「放行字面 !foo 文件」）。
+//   - 此行为与 claudecode 适配器（regex 引擎）一致收敛：claudecode 的 Rule.negated
+//     判据同样是 raw.startswith("!")，对 !!foo 也得 negated=True、glob="!foo"，
+//     求值时 excluded = not negated = False → 同样允许字面 !foo 文件。
+//   - 单个 "!"（len==1）不触发取反，原样返回 ("!", false)：长度判定拦下；
 //   - 仅剥前导 !，不动尾斜杠/内部字符（actual pattern 形态 = readignore 去取反后的 glob）。
 func stripNegation(p string) (actual string, ok bool) {
 	if strings.HasPrefix(p, "!") && len(p) > 1 {
