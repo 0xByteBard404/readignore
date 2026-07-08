@@ -1,0 +1,71 @@
+# golangci-lint 配置 — readignore
+#
+# 启用一组对开源 CLI 项目合理且高价值的 linter：
+#   govet / staticcheck / errcheck / gosec（安全加分）/ gofmt / gofumpt
+#   ineffassign / unused
+# 设计原则：默认 severity、零误报优先、go 1.25 兼容。
+# CI 通过 golangci/golangci-lint-action 调用本文件 (args: --timeout 5m)。
+
+run:
+  # go 1.25 (与 go.mod 的 go 1.25.0 对齐；go-git v5.19.1 要求)。
+  go: "1.25"
+  # 给 linter 足够时间跑完整仓 (大表 testdata 偶尔慢)。
+  timeout: 5m
+  # 排除构建产物与第三方目录。
+  skip-dirs:
+    - dist
+    - vendor
+  # testdata 目录由各包自行用 // nolint 处理，不在此全局排除。
+
+linters:
+  # 不全量启用（避免噪音）；只显式开下列高价值 linter。
+  disable-all: true
+  enable:
+    - govet        # 可疑 go 构造（govet 全套）。
+    - staticcheck  # 静态分析主力 (SA/ST/S/QF 系列)。
+    - errcheck     # 强制检查返回 error 的调用（防吞错）。
+    - gosec        # 安全扫描（G 系列，加分项：开源安全门面）。
+    - gofmt        # 格式标准化（gofmt -s 等价由 gofumpt 覆盖）。
+    - gofumpt     # 更严格的格式（与 gofmt 互补，统一风格）。
+    - ineffassign # 检测赋值后被忽略的变量（死赋值）。
+    - unused       # 未使用的函数/类型/常量/变量（静态可达性）。
+
+linters-settings:
+  staticcheck:
+    # 启用全部检查 (SA/ST/S/QF)；不单独禁用某条。
+    checks: ["all"]
+  errcheck:
+    # 强制显式处理 error 返回值；blank 标识符 (_) 仍允许（有意忽略时）。
+    # 不排除任何函数（如 fmt.*）—— 默认行为，鼓励显式 _ 写法。
+    check-type-assertions: false
+    check-blank: false
+  gosec:
+    # 不全局排除任何 G 规则；确为误报处用 //nolint:gosec 局部豁免并注明原因。
+    excludes: []
+  gofumpt:
+    # 与 gofmt 一致的模块路径长度；保持默认。
+    extra-rules: false
+
+issues:
+  # 不限制单 linter 最大 issue 数（让 CI 完整暴露问题）。
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  # 不自动 fix（CI 只报告，由开发者本地 golangci-lint run --fix 处理）。
+  fix: false
+  exclude-use-default: true
+  exclude-rules:
+    # 测试文件：errcheck 对 _test.go 放宽（测试里常见故意忽略 error 的断言场景），
+    # 但保留 govet/staticcheck/gosec 等仍生效。仅排除 errcheck，避免误报淹没真问题。
+    - path: _test\.go
+      linters:
+        - errcheck
+    # main.go 只做入口委托，无 error 处理余地。
+    - path: cmd/readignore/main\.go
+      linters:
+        - errcheck
+
+output:
+  # 友好的输出格式：带文件行号 + 规则代号，便于点击跳转。
+  formats:
+    - format: colored-line-number
+  sort-results: true

@@ -1,0 +1,146 @@
+# goreleaser 配置 — readignore
+#
+# 跨平台二进制发布 (linux/darwin/windows × amd64/arm64) + SHA256 checksums +
+# Homebrew tap + GitHub Release 自动化。
+#
+# 占位说明（发布前必填）:
+#   - <OWNER>: Homebrew tap 仓库的 owner（建议同本仓库 owner 0xByteBard404，
+#     但 tap 仓库名固定为 homebrew-tap，故填 owner 即可）。
+#   - 发布流程: 打 tag (git tag -a v0.1.0) → 推 tag → GitHub Action 触发 Release。
+#
+# 校验: 若本地装了 goreleaser，跑 `goreleaser check` 验证 yaml 语法合法。
+# 版本: 本配置面向 goreleaser v2 (本文件无需 version: 2 顶层键，v2 默认兼容)。
+
+version: 2
+
+project_name: readignore
+
+# 发布前置钩子: 确保模块整洁 + 全仓测试绿才走构建。任一步失败即中止发布。
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+# 单二进制构建矩阵: 平台 × 架构 × 压缩。
+builds:
+  - id: readignore
+    main: ./cmd/readignore
+    # 二进制产物名（各平台一致，跨平台靠 GOOS/GOEXT 后缀区分）。
+    binary: readignore
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # 版本注入: 把 git tag 版本号 ldflags 进 internal/cli.Version
+    # (配合 cli.go 的 var Version = "dev"，未注入时为 "dev"，注入后为 release 版本)。
+    ldflags:
+      - -s -w -X github.com/0xByteBard404/readignore/internal/cli.Version={{.Version}}
+    # 忽略 ARM64 Windows（无主流工具链需求，避免噪音产物；如需补可删此 ignore）。
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  # 打包成 zip/tar.gz，附 README + LICENSE 提升开箱体验。
+  - id: default
+    builds: [readignore]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+      - goos: linux
+        formats: [tar.gz]
+      - goos: darwin
+        formats: [tar.gz]
+    files:
+      - README.md
+      - LICENSE
+      - CHANGELOG.md
+
+# SHA256 校验文件 (checksums.txt): 发布物完整性核验，CI/用户可对照。
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+# SNAPSHOT 构建 (无 tag 时 `goreleaser release --snapshot`) 产出带 -next 后缀。
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+# 发布变更日志: 按 conventional commits 分组，去噪音 (chore/docs/build)。
+changelog:
+  use: git
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^build:"
+      - "^ci:"
+      - "Merge pull request"
+      - "Merge branch"
+  groups:
+    - title: "Features"
+      regexp: "^feat:"
+      order: 10
+    - title: "Bug fixes"
+      regexp: "^fix:"
+      order: 20
+    - title: "Others"
+      order: 998
+
+# Homebrew tap: 推送到 <OWNER>/homebrew-tap 仓库，用户 `brew install` 即用。
+# 仓库不存在时 goreleaser 会报错（需先手动建空 tap 仓库）。
+brews:
+  - name: readignore
+    repository:
+      owner: 0xByteBard404            # TODO(发布前): 确认 owner（默认本仓库 owner）
+      name: homebrew-tap
+      # token 默认用 GITHUB_TOKEN (goreleaser 内置)；私有 tap 需 HOMEBREW_TAP_GITHUB_TOKEN。
+    directory: Formula
+    homepage: https://github.com/0xByteBard404/readignore
+    description: ".gitignore for AI coding agents — declare files your AI agent must not read."
+    license: MIT
+    test: |
+      system "#{bin}/readignore", "--version"
+    install: |
+      bin.install "readignore"
+
+# Scoop (Windows 包管理) — 占位，发布后按需启用（需先建 scoop-bucket 仓库）。
+# scoop:
+#   bucket:
+#     owner: 0xByteBard404
+#     name: scoop-bucket
+#   homepage: https://github.com/0xByteBard404/readignore
+#   description: ".gitignore for AI coding agents"
+#   license: MIT
+
+# AUR (Arch) — 占位，需手动维护 PKGBUILD，发布后按需启用。
+# aurs:
+#   - name: readignore-bin
+#     homepage: https://github.com/0xByteBard404/readignore
+#     license: MIT
+#     maintainers:
+#       - "0xByteBard404 <noreply@github.com>"
+#     description: ".gitignore for AI coding agents"
+
+# GitHub Release: 自动创建 Release 页面并上传全部产物。
+release:
+  github:
+    owner: 0xByteBard404
+    name: readignore
+  draft: true
+  prerelease: auto
+  name_template: "readignore {{ .Version }}"
+  header: |
+    ## readignore {{ .Version }}
+
+    `.gitignore` for AI coding agents — declare files your AI agent must not read.
+
+    See [CHANGELOG.md](./CHANGELOG.md) for full changes.
