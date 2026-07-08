@@ -57,7 +57,7 @@ Thumbs.db
 .vscode/
 
 # --- 示例：取反放行（脱敏的示例文件允许 agent 读取） ---
-# !.env.example
+!.env.example
 # !credentials.example.json
 `
 

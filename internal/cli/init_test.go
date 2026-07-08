@@ -27,6 +27,10 @@ func TestInit_CreatesTemplate(t *testing.T) {
 	assert.Contains(t, body, "**/id_rsa")
 	assert.Contains(t, body, ".aws/")
 	assert.Contains(t, body, "#") // 含注释
+	// 默认放行脱敏示例文件（! 取反启用），与 README 语法示例一致。
+	assert.Contains(t, body, "!.env.example")
+	// 误判保险：确保不是以注释形式出现（旧模板曾注释掉）。
+	assert.NotContains(t, body, "# !.env.example")
 }
 
 // .readignore 已存在时拒绝覆盖，提示 --force。
