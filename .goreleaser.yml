@@ -98,7 +98,7 @@ changelog:
 brews:
   - name: readignore
     repository:
-      owner: 0xByteBard404            # TODO(发布前): 确认 owner（默认本仓库 owner）
+      owner: 0xByteBard404            # 注意：需先手动创建 0xByteBard404/homebrew-tap 空仓库，否则首次 release 推 tap 失败
       name: homebrew-tap
       # token 默认用 GITHUB_TOKEN (goreleaser 内置)；私有 tap 需 HOMEBREW_TAP_GITHUB_TOKEN。
     directory: Formula
