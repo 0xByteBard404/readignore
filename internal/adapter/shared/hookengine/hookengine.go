@@ -43,6 +43,12 @@ func BuildShScript(rawPatterns []string) string {
 //   - claudecode：".claude/hooks/readignore.py"（[BuildShScript] 即此默认）；
 //   - codex：    ".codex/hooks/readignore.py"。
 //
+// 安全约束（API 契约）：pyPath 被直接插入未引用的 shell 位置（生成脚本里
+// `"$PY" <pyPath> "$val"`，pyPath 不在引号内），故 pyPath 必须是不含空格与 shell
+// 元字符（; | & $ ` " ' \ ( ) < > * ? [ ] # ! 等）的 POSIX 路径，否则会破坏生成的
+// sh 语法或引入命令注入面。本函数不做转义/校验——这是调用方的责任。当前的合法调用方
+// （claudecode/codex）均传字面常量路径，安全；若未来调用方接收外部输入，必须先做白名单校验。
+//
 // 设计要点（与 v0.1 claudecode 零差异，纯搬迁）：
 //   - 无 jq 依赖：用 grep -oE 从原始 JSON 文本抽取字段值（Read→file_path、Grep→path、
 //     Glob→pattern、Bash→command）；
