@@ -322,7 +322,7 @@ func TestIntegration_CharClasses(t *testing.T) {
 	allowCase(t, repoRoot, "main.cho → ALLOW (single char class, not multi)", "Read", "file_path", "main.cho")
 }
 
-// TestIntegration_InjectSafety 验证 pythonRepr 改动（M-2 控制字符转义）后，
+// TestIntegration_InjectSafety 验证 hookengine 的 py 引擎转义改动（M-2 控制字符转义）后，
 // patterns 含 " / \ / 恶意 python 代码仍被安全转义为字面字符串，不会被解释执行。
 func TestIntegration_InjectSafety(t *testing.T) {
 	// 这条 pattern 试图逃逸字面量注入恶意 python："] + [__import__("os").system("x")
@@ -344,8 +344,9 @@ func TestIntegration_InjectSafety(t *testing.T) {
 	assert.NotContains(t, stderr, "system")
 }
 
-// TestPythonRepr_ControlChars 验证 M-2：pythonRepr 对控制字符（NUL/VT/FF/DEL）转义为
-// \xNN，避免生成的 .py 文件含裸控制字符触发 SyntaxError。这里直接断言产物字符串。
+// TestPythonRepr_ControlChars 验证 M-2：hookengine 的 py 引擎转义对控制字符
+// （NUL/VT/FF/DEL）转义为 \xNN，避免生成的 .py 文件含裸控制字符触发 SyntaxError。
+// 这里直接断言产物字符串。
 func TestPythonRepr_ControlChars(t *testing.T) {
 	a := Adapter{}
 	// 含 NUL(\x00) / VT(\x0b) / FF(\x0c) / DEL(\x7f) 的 pattern。

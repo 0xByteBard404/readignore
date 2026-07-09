@@ -55,11 +55,12 @@ export default function (pi: any): void {
 			const abs = resolve((ctx && ctx.cwd ? ctx.cwd : process.cwd()), path);
 
 			if (isBlocked(abs) || isBlocked(path)) {
+				// 静态拒绝消息：不回显 LLM 控制的 path，避免把用户/模型输入反射进输出。
 				return {
 					content: [
 						{
 							type: "text",
-							text: 'Access denied: "' + path + '" matches a blocked pattern (sensitive file). readignore blocks access to files declared in .readignore.',
+							text: "Access denied: this path matches a blocked pattern (sensitive file). readignore blocks access to files declared in .readignore.",
 						},
 					],
 					details: { blocked: true },

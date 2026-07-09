@@ -1,14 +1,13 @@
 package pi
 
-// tsMatcherBody 是 gitignore 匹配引擎的 TS/JS 实现（与生成 .ts 和测试 harness 共享）。
+// tsMatcherBody 是 gitignore 匹配引擎的 JS 实现（纯 ES，无 TS 类型注解），
+// 被 text/template 拼进生成的 readignore.ts（外层模板提供类型注解，如
+// `const PATTERNS: readonly string[] = ...`；本体本身不含注解）。
 //
-// 它必须同时是：
-//   - 合法 TS 片段（拼进 readignore.ts 模板，类型注解用 :string/:boolean）；
-//   - 合法 JS 片段（测试 harness 直接用 node 跑，类型注解被 node 当作标签忽略也可——
-//     为稳妥起见类型注解写成 node 能解析的形式：实际上 node 跑 .mjs 不接受类型注解，
-//     故测试 harness 里 matcherJSBody() 必须剥掉注解；见 matcherJSBody 注释）。
-//
-// 因此本常量使用**带类型注解的 TS**，测试 harness 通过 matcherJSBody() 把注解剥成 JS。
+// 之所以特意写成**纯 JS（无注解）**而非带类型注解的 TS：使生成的 .ts 与
+// node 测试 harness 共享同一字符串——node 跑 .mjs 不接受 TS 注解，若本体含注解，
+// harness 必须额外剥注解才能跑；纯 JS 双向兼容（TS 把它当合法表达式，node 直接跑），
+// 无需任何转换。
 //
 // 匹配语义（与 internal/adapter/shared/hookengine 的 py 引擎对齐，I-1/I-2/M-1 修复同源）：
 //   - `**/`  → 任意层级目录前缀（含零层）：编译成 (?:.*/)? ；
@@ -103,6 +102,11 @@ function globToRegex(glob) {
 }
 
 function escapeRe(c) {
+	// Regex metacharacters that need escaping when they reach here as a literal
+	// single char. The chars *, ?, [ are consumed by the switch above (never
+	// reach here). The chars ], {, }, | are accepted literally by JS regex when
+	// they appear alone (no matching opener), so listing them is harmless but
+	// unnecessary; this list keeps them for safety/parity with the py engine.
 	const meta = ".\\+()|^$={}?:!";
 	if (meta.indexOf(c) >= 0) return "\\" + c;
 	return c;
