@@ -36,6 +36,7 @@ import (
 	_ "github.com/0xByteBard404/readignore/internal/adapter/claudecode"
 	_ "github.com/0xByteBard404/readignore/internal/adapter/codex"
 	_ "github.com/0xByteBard404/readignore/internal/adapter/opencode"
+	_ "github.com/0xByteBard404/readignore/internal/adapter/pi"
 )
 
 // Version 是 readignore 的版本字符串，构建时可通过
