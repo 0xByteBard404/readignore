@@ -35,6 +35,25 @@ func TestBuildShScript_Structure(t *testing.T) {
 	assert.Contains(t, got, "path")
 	assert.Contains(t, got, "pattern")
 	assert.Contains(t, got, "command")
+
+	// BuildShScript 默认指向 claudecode 落点。
+	assert.Contains(t, got, ".claude/hooks/readignore.py",
+		"BuildShScript default path must be .claude/hooks/readignore.py")
+}
+
+// TestBuildShScriptAt_CustomPath 验证 BuildShScriptAt 把传入的 pyPath 注入 sh，
+// 使 codex 等落点不同的适配器能复用同一 sh 逻辑（仅 python 引擎相对路径不同）。
+func TestBuildShScriptAt_CustomPath(t *testing.T) {
+	got := BuildShScriptAt([]string{".env"}, ".codex/hooks/readignore.py")
+
+	// 注入的自定义路径必须出现，且默认 claudecode 路径必须**不**出现。
+	assert.Contains(t, got, ".codex/hooks/readignore.py")
+	assert.NotContains(t, got, ".claude/hooks/readignore.py",
+		"custom path must replace default claudecode path")
+
+	// 路径在两处被引用（path 字段循环 + command 字段），都应是 codex 路径。
+	assert.Equal(t, 2, strings.Count(got, ".codex/hooks/readignore.py"),
+		"pyPath must be injected at both call sites (path loop + command)")
 }
 
 // TestBuildPyEngine_Structure 验证 py 引擎骨架：内嵌 patterns + matches 函数 + 取反语义。

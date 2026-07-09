@@ -24,30 +24,46 @@ import (
 	"strings"
 )
 
-// BuildShScript 返回 readignore.sh 全文（Claude-style PreToolUse hook 的 shell 脚本）。
+// BuildShScript 返回 readignore.sh 全文（Claude-style PreToolUse hook 的 shell 脚本），
+// 其中 python 引擎路径固定为 .claude/hooks/readignore.py（claudecode 适配器专用便捷函数）。
 //
 // rawPatterns 当前不被脚本内容引用（sh 不内嵌 patterns，匹配判定全在 readignore.py 里），
 // 但保留在签名里以便：(1) 调用方语义清晰（与 BuildPyEngine 对称）；
 // (2) 未来若 sh 需要按 patterns 做静态优化（如 patterns 全为空时直接放行）有扩展点。
 //
+// 落点不同的适配器（如 codex 写 .codex/hooks/）应改调 [BuildShScriptAt] 显式传路径。
+func BuildShScript(rawPatterns []string) string {
+	return BuildShScriptAt(rawPatterns, ".claude/hooks/readignore.py")
+}
+
+// BuildShScriptAt 与 [BuildShScript] 相同，但允许调用方指定 readignore.py 的相对路径
+// （相对仓库根，sh 内部以该路径调 python）。codex 等落点不同的适配器用本函数。
+//
+// pyPath 应为 POSIX 风格（用 `/` 分隔），典型值：
+//   - claudecode：".claude/hooks/readignore.py"（[BuildShScript] 即此默认）；
+//   - codex：    ".codex/hooks/readignore.py"。
+//
 // 设计要点（与 v0.1 claudecode 零差异，纯搬迁）：
 //   - 无 jq 依赖：用 grep -oE 从原始 JSON 文本抽取字段值（Read→file_path、Grep→path、
 //     Glob→pattern、Bash→command）；
 //   - 跨平台 python：逐个试 python3/python 的 --version，第一个真正可执行的胜出
-//     （Windows 上 python3 常为商店占位符，command -v 不够）；
+//     （Windows 上 python3 常是商店占位符，command -v 不够）；
 //   - command 字段（Bash）整体当 shell 命令处理：py 按元字符切 token 扫描，
 //     而非把 "cat .env" 当一个文件名；其它字段按路径判；
 //   - 命中 → stdout 输出 PreToolUse deny JSON；不命中 → 静默 exit 0；
 //   - 工作目录假设为仓库根（Claude Code 实际也是从仓库根发起 hook），
 //     故用相对路径调 py。
-func BuildShScript(rawPatterns []string) string {
+//
+// 实现说明：sh 内容分为固定 head 与一段引用 pyPath 的 loop，二者用普通字符串拼接
+// （head + loop），避免 raw string literal 内无法插值 pyPath 的问题。
+func BuildShScriptAt(rawPatterns []string, pyPath string) string {
 	_ = rawPatterns // 当前 sh 不内嵌 patterns；保留参数供未来扩展（见 godoc）。
-	const tmpl = `#!/usr/bin/env bash
+	const head = `#!/usr/bin/env bash
 # readignore PreToolUse hook（由 readignore CLI 生成，请勿手改）。
 # 从 Claude Code 传入的 tool_input JSON 中抽取目标路径/命令，喂给 readignore.py
 # 判定是否命中 .readignore；命中即输出 PreToolUse deny 决策。
 #
-# 覆盖工具：Read | Grep | Glob | Bash（由 .claude/settings.json 的 matcher 指定）。
+# 覆盖工具：Read | Grep | Glob | Bash（由 settings/hooks.json 的 matcher 指定）。
 # 无 jq 依赖：用 grep -oE 抽取字段值；匹配判定全在 readignore.py 里（标准库）。
 set -u
 
@@ -93,12 +109,13 @@ deny() {
 
 # 依次尝试各工具的目标字段；任一被 py 判定命中（stdout 输出 DENY）即 deny。
 # 注意：py 的 allow/deny 信号走 stdout，exit code 恒为 0（PreToolUse hook 不能非零退）。
-# command 字段（Bash 工具）整体当 shell 命令处理：py 按 shell 元字符切 token 扫描，
+# command 字段（Bash 工具）整体当 shell 命令处理：py 按元字符切 token 扫描，
 # 而非把 "cat .env" 当一整个文件名。其它字段（file_path/path/pattern）按路径判。
-for field in file_path path pattern; do
+`
+	loop := `for field in file_path path pattern; do
   val=$(extract_field "$input" "$field")
   if [ -n "$val" ]; then
-    result=$("$PY" .claude/hooks/readignore.py "$val" 2>/dev/null)
+    result=$("$PY" ` + pyPath + ` "$val" 2>/dev/null)
     if [ "$result" = "DENY" ]; then
       deny
     fi
@@ -106,7 +123,7 @@ for field in file_path path pattern; do
 done
 val=$(extract_field "$input" "command")
 if [ -n "$val" ]; then
-  result=$("$PY" .claude/hooks/readignore.py --command "$val" 2>/dev/null)
+  result=$("$PY" ` + pyPath + ` --command "$val" 2>/dev/null)
   if [ "$result" = "DENY" ]; then
     deny
   fi
@@ -115,7 +132,7 @@ fi
 # 无命中：静默放行。
 exit 0
 `
-	return tmpl
+	return head + loop
 }
 
 // BuildPyEngine 返回 readignore.py 全文，把 patterns 以合法 Python 字面量内嵌。
@@ -326,13 +343,13 @@ def matches(path):
 def matches_command(command):
     """判定一条 shell 命令是否引用了 .readignore 命中的路径。
 
-    Bash 命令里文件名以空白/shell 元字符分隔，故按 [:\\s|;<>&"'` + "`" + `] 切片，
+    Bash 命令里文件名以空白/shell 元字符分隔，故按 [:\s|;<>&"'` + "`" + `] 切片，
     对每个非空 token 调用 matches。覆盖：cat .env / cat ./.env.production /
     grep foo secret.pem / scp sub/id_rsa host:/ 等。
     """
     if command is None:
         return False
-    # 用一组常见分隔符切（保守：不破坏文件名里的 . _ - +）。Windows 路径 \\ 留给 matches 规范化。
+    # 用一组常见分隔符切（保守：不破坏文件名里的 . _ - +）。Windows 路径 \ 留给 matches 规范化。
     # 直接用模块顶已 import 的 re，无需局部再 import（M-3 清理）。
     tokens = re.split(r"[\s|;<>&\"'` + "`" + `()]+", command)
     for tok in tokens:
