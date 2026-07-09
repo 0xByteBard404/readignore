@@ -8,7 +8,7 @@
 //
 // 产物三件套（Generate 返回，由调用方/安装层写入磁盘）：
 //   - .codex/hooks/readignore.sh  (0755)  从 tool_input JSON 抽取目标路径/命令，
-//    交 readignore.py 判定，命中即输出 PreToolUse deny JSON；
+//     交 readignore.py 判定，命中即输出 PreToolUse deny JSON；
 //   - .codex/hooks/readignore.py  (0644)  匹配引擎：标准库实现 gitignore 语义；
 //   - .codex/hooks.json           (0)     PreToolUse 注册（Claude-style 结构）。
 //
@@ -17,7 +17,7 @@
 //     HookEventsToml 用 "PreToolUse" 等 PascalCase 键 → Vec<MatcherGroup>；
 //     MatcherGroup{matcher?: string, hooks: Vec<HookHandlerConfig>}；
 //     HookHandlerConfig 为 #[serde(tag="type")] enum，Command 变体字段：
-//       command / commandWindows? / timeout(对应 Rust 字段 timeout_sec) / async? / statusMessage?。
+//     command / commandWindows? / timeout(对应 Rust 字段 timeout_sec) / async? / statusMessage?。
 //     故 codex 的 timeout 字段名是 "timeout"（与 Claude Code 一致），且**无** "shell" 字段。
 //   - matcher 语义（hooks/src/events/common.rs）：若 matcher 仅含 [A-Za-z0-9_|]
 //     则按 exact pipe 匹配（"Read|Grep|Glob|Bash" 等价精确匹配任一）；否则当正则。
