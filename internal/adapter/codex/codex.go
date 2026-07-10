@@ -6,6 +6,18 @@
 // 决策。本适配器因此与 claudecode 共用 shared/hookengine 生成的 sh+py，仅在配置包装
 // （hooks.json schema、文件落点 .codex/、hook 信任提示）上做 codex 专属处理。
 //
+// # 平台限制：拦截只走 Bash 命令路径
+//
+// codex 的工具模型与 Claude Code 不同：codex **没有**独立的 Read/Grep/Glob 工具，
+// agent 读文件一律走 shell 命令（cat .env / head -n / grep ...）。因此 PreToolUse
+// hook 实际只在 tool_name="Bash"（tool_input.command 含目标路径）时触发——本适配器
+// 的 sh 也会从 command 字段抽取路径参与匹配。
+//
+// hooks.json 里 matcher 写作 "Read|Grep|Glob|Bash" 是为了：① 兼容用户在 codex 里
+// 装的 MCP 同名工具（若有 Read/Grep/Glob 类 MCP 工具，hook 同样会拦），② 与
+// claudecode 适配器对称、便于共用 hookengine。但 codex 原生只有 Bash 一条路径命中，
+// 原生的「读文件」不会被独立 Read 工具触发（因为不存在该工具）。
+//
 // 产物三件套（Generate 返回，由调用方/安装层写入磁盘）：
 //   - .codex/hooks/readignore.sh  (0755)  从 tool_input JSON 抽取目标路径/命令，
 //     交 readignore.py 判定，命中即输出 PreToolUse deny JSON；
@@ -79,10 +91,17 @@ func (Adapter) Detect(repoRoot string) bool {
 // codex 加载 ~/.codex 与项目 .codex/hooks.json 作为 hook 源；首次执行项目级 hook
 // 时会做信任校验（用户需在交互提示里确认信任，或以 --dangerously-bypass-hook-trust
 // 绕过——见 codex-rs/exec/tests/suite/hooks.rs:36 的同名义旗）。
+//
+// 平台限制提醒：codex 无独立 Read/Grep/Glob 工具，agent 读文件走 Bash 命令
+// （cat / head / grep …），故 hook 实际只在 Bash 命令路径上触发。matcher 里的
+// Read|Grep|Glob 仅为兼容用户自装的 MCP 同名工具与对称设计，原生不命中。
 func (Adapter) InstallInstructions() string {
 	return "已写入 .codex/。codex 加载 .codex/hooks.json 作为 hook 源。" +
 		"首次执行项目级 hook 时 codex 会做信任校验：在交互提示中确认信任该 hook，" +
-		"或以 --dangerously-bypass-hook-trust 绕过信任检查。"
+		"或以 --dangerously-bypass-hook-trust 绕过信任检查。" +
+		"注意：codex 无独立 Read 工具，agent 读文件走 Bash 命令（cat/head/grep），" +
+		"故 hook 原生只在 Bash 路径触发；matcher 中的 Read|Grep|Glob 仅为兼容" +
+		"用户自装的 MCP 同名工具与对称设计。"
 }
 
 // Generate 依据 plan 产出三个文件（sh / py / hooks.json）。

@@ -48,7 +48,7 @@ Strength tiers are **honest**, not marketing:
 | Agent | Strength | Mechanism | Status |
 |---|---|---|---|
 | **Claude Code** | **hard** | `PreToolUse` hook — blocks the tool call **before** it runs (Read, Grep, Glob, Bash). Programmatic interception at runtime. | ✅ shipped |
-| **codex CLI** | **hard** | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash+python). Same runtime-deny mechanism as Claude Code; requires hook trust on first run. | ✅ shipped |
+| **codex CLI** | **hard** | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash+python). Same runtime-deny mechanism as Claude Code; requires hook trust on first run. See [codex note](#codex-platform-note) below. | ✅ shipped |
 | **pi** | **hard** | `.pi/extensions/readignore.ts` TypeScript extension that **overrides** the built-in `read` tool — returns `Access denied` for matched paths before the file is read. Auto-loaded at startup. | ✅ shipped |
 | **opencode** | **config** | `permission.read` deny/allow globs in `opencode.json`; enforced when opencode loads config. | ✅ shipped |
 | **Cursor** | soft | `.cursor/rules` natural-language advisory (model may comply). | 🗺 roadmap |
@@ -222,6 +222,25 @@ engine runs and denies before the tool executes.
 > **Hook trust:** codex gates project-level hooks behind a trust prompt. The
 > first time a project hook runs you'll be asked to confirm trust; pass
 > `--dangerously-bypass-hook-trust` to skip the check (e.g. in CI).
+
+#### codex platform note — Bash-only hook trigger
+
+Unlike Claude Code, **codex has no standalone `Read` / `Grep` / `Glob` tools**.
+The codex agent reads files exclusively via **shell commands** (`cat .env`,
+`head -n 50 file`, `grep pattern file`). Consequently the `PreToolUse` hook
+fires *natively* only on `tool_name="Bash"` (with the target path appearing
+inside `tool_input.command`), and readignore's matcher extracts the path from
+that `command` string.
+
+The `matcher: "Read|Grep|Glob|Bash"` in `hooks.json` is deliberate, not a bug:
+
+- it keeps the codex adapter **symmetric** with the Claude Code adapter (same
+  shared bash+python hook engine);
+- it covers users who install **MCP tools** exposing `Read`/`Grep`/`Glob` into
+  codex — those MCP tools would also be intercepted.
+
+But for codex's **native** tool set, only the `Bash` arm ever fires. A native
+"read this file" call is always a Bash command, which the hook does intercept.
 
 ### pi (`readignore install pi`)
 
