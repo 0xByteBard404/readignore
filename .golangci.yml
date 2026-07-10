@@ -64,6 +64,13 @@ issues:
     - path: cmd/readignore/main\.go
       linters:
         - errcheck
+    # gosec G306（os.WriteFile 期望 ≤0600）：readignore 写的是 .readignore 配置模板
+    # 与测试临时文件——配置文件需 readable（0644 合理），测试文件权限无关紧要。
+    # G306 对此过严，全局排除 G306；其余 gosec G 规则仍全部生效。
+    - path: .*
+      linters:
+        - gosec
+      text: "G306"
 
 output:
   # 友好的输出格式：带文件行号 + 规则代号，便于点击跳转。

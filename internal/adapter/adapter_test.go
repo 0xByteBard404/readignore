@@ -75,7 +75,7 @@ func TestRegister_All_Get_Contract(t *testing.T) {
 		stubID:           "stub-tool",
 		stubStrength:     StrengthHard,
 		stubDetect:       true,
-		stubFiles:        []GeneratedFile{{Path: "a.txt", Content: "x", Mode: 0644}},
+		stubFiles:        []GeneratedFile{{Path: "a.txt", Content: "x", Mode: 0o644}},
 		stubInstructions: "do X",
 	}
 	Register(stub)
@@ -176,8 +176,8 @@ func TestStubAdapter_DetectAndGenerate_Delegate(t *testing.T) {
 	withCleanRegistry(t)
 
 	wantFiles := []GeneratedFile{
-		{Path: "dir/cfg.json", Content: "{}", Mode: 0600},
-		{Path: "scripts/hook.sh", Content: "#!/bin/sh", Mode: 0755},
+		{Path: "dir/cfg.json", Content: "{}", Mode: 0o600},
+		{Path: "scripts/hook.sh", Content: "#!/bin/sh", Mode: 0o755},
 	}
 	stub := &stubAdapter{
 		stubID:       "recorder",
