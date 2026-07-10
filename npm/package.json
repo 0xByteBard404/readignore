@@ -1,0 +1,14 @@
+{
+  "name": "readignore",
+  "version": "0.2.0",
+  "description": ".gitignore for AI coding agents — declare files your AI agent must not read.",
+  "bin": { "readignore": "bin.js" },
+  "scripts": { "postinstall": "node postinstall.js" },
+  "engines": { "node": ">=18" },
+  "os": ["linux", "darwin", "win32"],
+  "cpu": ["x64", "arm64"],
+  "files": ["postinstall.js", "bin.js"],
+  "repository": { "type": "git", "url": "https://github.com/0xByteBard404/readignore" },
+  "homepage": "https://github.com/0xByteBard404/readignore#readme",
+  "license": "MIT"
+}

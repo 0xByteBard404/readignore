@@ -16,3 +16,9 @@ Thumbs.db
 
 # internal design docs (kept locally, not tracked)
 docs/plans/
+
+# npm wrapper package — postinstall 下载的 Go 二进制产物（不入库）
+npm/bin/
+npm/**/_extract/
+npm/**/*.tmp
+npm/node_modules/
