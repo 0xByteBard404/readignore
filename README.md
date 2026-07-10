@@ -261,19 +261,26 @@ type-checks in isolation.
 
 ## Installation
 
-**`go install` (available now):**
+**npm (recommended — no Go needed):**
+
+```bash
+npm i -g readignore      # or: npx readignore
+```
+
+The npm wrapper's `postinstall` downloads the right Go binary for your platform
+from [GitHub Releases](https://github.com/0xByteBard404/readignore/releases).
+
+**`go install` (if you have Go 1.25+):**
 
 ```bash
 go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 ```
 
-**Package managers (after release — targeted v0.3):** Homebrew, Scoop, npm,
-and `curl | sh` one-liners will ship once the goreleaser pipeline publishes the
-first GitHub Release. Links will be added here at release time (no placeholder
-URLs until binaries actually exist). Track
-[Releases](https://github.com/0xByteBard404/readignore/releases).
+**Binary download:** grab the archive for your platform from
+[Releases](https://github.com/0xByteBard404/readignore/releases), extract, and
+put `readignore` on your PATH.
 
-> Requires Go 1.25+ (go-git v5.19.1 dependency) for the `go install` path.
+**Coming soon (v0.3+):** Homebrew, Scoop, `curl | sh`.
 
 ---
 

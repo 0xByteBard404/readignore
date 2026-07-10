@@ -250,18 +250,23 @@ pi 在启动时
 
 ## 安装
 
-**`go install`（现已可用）：**
+**npm（推荐，无需 Go 环境）：**
+
+```bash
+npm i -g readignore      # 或：npx readignore
+```
+
+npm 壳包的 `postinstall` 会按你的平台从 [GitHub Releases](https://github.com/0xByteBard404/readignore/releases) 下载对应的 Go 二进制。
+
+**`go install`（有 Go 1.25+ 环境）：**
 
 ```bash
 go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 ```
 
-**包管理器（发布后——计划 v0.3）：** Homebrew、Scoop、npm 以及 `curl | sh` 一行命令
-将在 goreleaser 流水线发布首个 GitHub Release 后推出。届时会在此处补充实际链接（在
-二进制真正生成前不留占位 URL）。关注
-[Releases](https://github.com/0xByteBard404/readignore/releases)。
+**二进制下载：** 从 [Releases](https://github.com/0xByteBard404/readignore/releases) 下载你平台的压缩包，解压后把 `readignore` 放到 PATH。
 
-> `go install` 方式需要 Go 1.25+（依赖 go-git v5.19.1）。
+**即将推出（v0.3+）：** Homebrew、Scoop、`curl | sh`。
 
 ---
 
