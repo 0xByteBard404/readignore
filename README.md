@@ -1,5 +1,7 @@
 # readignore
 
+**English** | [中文](README.zh-CN.md)
+
 **`.gitignore` for AI coding agents — declare files your AI agent must not read.**
 
 [![CI](https://github.com/0xByteBard404/readignore/actions/workflows/ci.yml/badge.svg)](https://github.com/0xByteBard404/readignore/actions/workflows/ci.yml)
@@ -78,7 +80,7 @@ each agent can actually enforce.
 ## Quickstart
 
 ```bash
-# 1. Install (placeholder until first release ships binaries)
+# 1. Install
 go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 
 # 2. In your repo:
@@ -240,17 +242,19 @@ type-checks in isolation.
 
 ## Installation
 
-**From source (current, pre-release):**
+**`go install` (available now):**
 
 ```bash
 go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 ```
 
-**Via package manager (after first release):** Homebrew and binary downloads
-will be published alongside the `v0.1.0` GitHub Release. See
+**Package managers (after release — targeted v0.3):** Homebrew, Scoop, npm,
+and `curl | sh` one-liners will ship once the goreleaser pipeline publishes the
+first GitHub Release. Links will be added here at release time (no placeholder
+URLs until binaries actually exist). Track
 [Releases](https://github.com/0xByteBard404/readignore/releases).
 
-> Requires Go 1.25+ (go-git v5.19.1 dependency).
+> Requires Go 1.25+ (go-git v5.19.1 dependency) for the `go install` path.
 
 ---
 
@@ -273,7 +277,7 @@ v0.2.0 — three **hard** adapters (Claude Code, codex CLI, pi) + one **config**
 adapter (opencode). Parser, adapter registry, and CLI are stable. Cursor and
 kilo code adapters are on the roadmap.
 
-See [CHANGELOG.md](./CHANGELOG.md) and [docs/plans/](./docs/plans/) for design.
+See [CHANGELOG.md](./CHANGELOG.md) for the version history.
 
 ---
 
