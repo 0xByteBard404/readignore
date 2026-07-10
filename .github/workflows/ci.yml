@@ -56,3 +56,6 @@ jobs:
         with:
           version: latest
           args: --timeout 5m
+          # install-mode: go install —— 用 setup-go 的 Go 1.25 从源码编译 golangci-lint，
+          # 避免 binary 模式装的预编译版（Go 1.24 build）不支持 Go 1.25 target。
+          install-mode: go install
