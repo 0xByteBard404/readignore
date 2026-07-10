@@ -13,3 +13,6 @@ vendor/
 # os
 .DS_Store
 Thumbs.db
+
+# internal design docs (kept locally, not tracked)
+docs/plans/
