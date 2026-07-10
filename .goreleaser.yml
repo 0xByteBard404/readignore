@@ -95,20 +95,22 @@ changelog:
 
 # Homebrew tap: 推送到 <OWNER>/homebrew-tap 仓库，用户 `brew install` 即用。
 # 仓库不存在时 goreleaser 会报错（需先手动建空 tap 仓库）。
-brews:
-  - name: readignore
-    repository:
-      owner: 0xByteBard404            # 注意：需先手动创建 0xByteBard404/homebrew-tap 空仓库，否则首次 release 推 tap 失败
-      name: homebrew-tap
-      # token 默认用 GITHUB_TOKEN (goreleaser 内置)；私有 tap 需 HOMEBREW_TAP_GITHUB_TOKEN。
-    directory: Formula
-    homepage: https://github.com/0xByteBard404/readignore
-    description: ".gitignore for AI coding agents — declare files your AI agent must not read."
-    license: MIT
-    test: |
-      system "#{bin}/readignore", "--version"
-    install: |
-      bin.install "readignore"
+#
+# TODO(v0.3+): 启用 brews（需先建 0xByteBard404/homebrew-tap 空仓库 + 配 HOMEBREW_TAP_GITHUB_TOKEN）
+# brews:
+#   - name: readignore
+#     repository:
+#       owner: 0xByteBard404            # 注意：需先手动创建 0xByteBard404/homebrew-tap 空仓库，否则首次 release 推 tap 失败
+#       name: homebrew-tap
+#       # token 默认用 GITHUB_TOKEN (goreleaser 内置)；私有 tap 需 HOMEBREW_TAP_GITHUB_TOKEN。
+#     directory: Formula
+#     homepage: https://github.com/0xByteBard404/readignore
+#     description: ".gitignore for AI coding agents — declare files your AI agent must not read."
+#     license: MIT
+#     test: |
+#       system "#{bin}/readignore", "--version"
+#     install: |
+#       bin.install "readignore"
 
 # Scoop (Windows 包管理) — 占位，发布后按需启用（需先建 scoop-bucket 仓库）。
 # scoop:

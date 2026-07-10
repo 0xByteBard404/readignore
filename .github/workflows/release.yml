@@ -1,0 +1,35 @@
+# Release workflow — 打 tag (v*) 触发 goreleaser 全平台构建 + GitHub Release。
+#
+# 触发: git push origin v0.1.0
+# 产物: 跨平台二进制压缩包 (linux/darwin/windows × amd64/arm64) + checksums.txt
+# 权限: GITHUB_TOKEN 默认含 contents:write，用于创建 Release 并上传产物。
+# 依赖: .goreleaser.yml（仓库根，brews 段在 homebrew-tap 建仓前临时禁用）。
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 全历史，供 changelog 生成取全部 commit
+
+      - uses: actions/setup-go@v5
+        with:
+          # 与 ci.yml 矩阵一致：go-git v5.19.1 要求 go 1.25。
+          go-version: '1.25'
+
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
