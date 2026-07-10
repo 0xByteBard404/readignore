@@ -30,7 +30,10 @@ const { execFileSync } = require('child_process');
 
 const OWNER = '0xByteBard404';
 const REPO = 'readignore';
-// version 与 Go release 同步（与 package.json version 一致）。
+// VERSION = 下载哪个 Go Release 的 binary（Go binary 版本）。
+// 注意：与 package.json 的壳包 version 解耦——壳包 bump（如 0.2.1 修复）
+// 不要求 Go 重发对应 Release；只有 Go binary 本身变更时才 bump 这里并打新 Release。
+// 当前 Go binary 仍是 v0.2.0（已 publish），壳包 0.2.1 下载 v0.2.0 binary 即可。
 const VERSION = '0.2.0';
 const TAG = `v${VERSION}`;
 const RELEASE_BASE = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}`;
@@ -183,29 +186,73 @@ async function downloadToFile(url, dest, attempt = 0) {
 // --- 解压 --------------------------------------------------------------
 
 /**
- * 用系统 `tar` 解压 archive 到目标目录。
- * tar 在 linux / darwin / windows 10 1803+ 均自带，且 windows 的 tar
- * 同时支持 .tar.gz 与 .zip（bsdtar 自动识别格式）。
+ * 解析可用的 tar 可执行文件路径。
  *
- * @param {string} archive  archive 文件路径
+ * **Windows 上的两个坑（必须同时处理）**：
+ *
+ * 1. **PATH 里的 `tar` 可能是 GNU tar**（如 Git Bash 自带的 `/usr/bin/tar`），
+ *    它**不能解压 .zip**（报 `This does not look like a tar archive`）。
+ *    Windows 10 1803+ 自带的 `C:\Windows\System32\tar.exe` 是 **bsdtar**
+ *    （libarchive），同时支持 .tar.gz 与 .zip。因此 Windows 上必须优先用
+ *    System32 的 bsdtar，而不是 PATH 里碰巧排在前面的 tar。
+ *
+ * 2. **Windows 绝对路径触发 host:path 远程语法**：把 `C:\path\to.zip` 直接
+ *    传给 GNU tar 时，`C:` 会被当主机名，报
+ *    `tar: Cannot connect to C: resolve failed`。bsdtar 不受此影响，但为稳妥
+ *    起见，extractArchive 统一用 cwd + basename（相对路径）回避该歧义。
+ *
+ * linux / darwin 上 PATH 里的 `tar` 都是 GNU tar 或 bsdtar，且只解压 .tar.gz
+ * （goreleaser 对 linux/darwin 出 tar.gz），无 zip 问题，直接用 PATH 的 tar。
+ *
+ * @returns {string} tar 可执行文件路径
+ */
+function resolveTarBin() {
+  if (process.platform !== 'win32') return 'tar';
+  // Windows：优先 System32 的 bsdtar（支持 zip）。System32 几乎总在，
+  // 但用 %SystemRoot% 兜底（极少数环境 System32 不在默认位置）。
+  const sysRoot = process.env.SystemRoot || 'C:\\Windows';
+  const bsdtar = path.join(sysRoot, 'System32', 'tar.exe');
+  if (fs.existsSync(bsdtar)) return bsdtar;
+  // 兜底：PATH 里的 tar.exe（可能是 bsdtar 也可能 GNU tar；
+  // 若是 GNU tar 且解压 zip 会失败，错误信息会提示用户）。
+  return 'tar.exe';
+}
+
+/**
+ * 用系统 `tar` 解压 archive 到目标目录。
+ *
+ * 实现要点（见 resolveTarBin 的详细说明）：
+ *   - Windows 优先用 System32 bsdtar（支持 .zip）。
+ *   - 用 `cwd: destDir` + basename（相对路径）执行，避免 Windows 绝对路径
+ *     触发 GNU tar 的 `host:path` 远程语法（`C:` 当主机名）。
+ *   - linux / darwin 上 cwd + 相对路径同样合法且等价，全平台兼容。
+ *
+ * @param {string} archive  archive 文件路径（含目录；必须位于 destDir 内）
  * @param {string} ext      'tar.gz' | 'zip'
- * @param {string} destDir  解压目标目录
+ * @param {string} destDir  解压目标目录（archive 必须位于其内）
  */
 function extractArchive(archive, ext, destDir) {
-  const tarBin = process.platform === 'win32' ? 'tar.exe' : 'tar';
-  // tar -xzf <archive> -C <destDir>   (tar.gz)
-  // tar -xf  <archive> -C <destDir>   (zip, bsdtar 自动识别)
-  const args = ext === 'tar.gz'
-    ? ['-xzf', archive, '-C', destDir]
-    : ['-xf', archive, '-C', destDir];
+  const tarBin = resolveTarBin();
+  // 仅传 basename（无 drive letter），用 cwd 定位到 destDir，
+  // 避免 Windows 绝对路径触发 GNU tar 的 host:path 远程语法。
+  const archiveRel = path.basename(archive);
+  // tar -xzf <archive>   (tar.gz)
+  // tar -xf  <archive>   (zip, bsdtar 自动识别格式)
+  // -C 已由 cwd 等价替代（解压到 cwd = destDir）。
+  const args = ext === 'tar.gz' ? ['-xzf', archiveRel] : ['-xf', archiveRel];
   try {
-    execFileSync(tarBin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    execFileSync(tarBin, args, {
+      cwd: destDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
   } catch (err) {
     const stderr = err.stderr ? err.stderr.toString().trim() : err.message;
     throw new Error(
       `[readignore] Failed to extract ${archive} via system \`tar\`.\n` +
+        `  tar bin:   ${tarBin}\n` +
         `  tar stderr: ${stderr}\n` +
-        `  Ensure \`tar\` is installed (Windows 10 1803+ ships tar.exe; ` +
+        `  Ensure \`tar\` is installed (Windows 10 1803+ ships bsdtar at ` +
+        `C:\\Windows\\System32\\tar.exe — supports .zip; ` +
         `linux/darwin ship tar by default).`,
     );
   }
