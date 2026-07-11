@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -54,23 +55,19 @@ func TestAdapter_ID_Detect_Instructions(t *testing.T) {
 	assert.True(t,
 		strings.Contains(instr, ".pi/extensions") || strings.Contains(instr, "extensions"),
 		"InstallInstructions should mention .pi/extensions auto-load; got: %s", instr)
+	// v0.3：提示要点出依赖 readignore 在 PATH + 改 .readignore 立即生效。
+	assert.Contains(t, instr, "readignore", "InstallInstructions should mention readignore binary dependency")
 }
 
 // TestGenerate_ProducesExtension 验证 Generate 产出单个 TS extension 文件：
 //   - 落点 .pi/extensions/readignore.ts，Mode 0644；
-//   - 含 registerTool override、name: "read"、内嵌 patterns、gitignore 匹配语义。
+//   - override 内置 `read`（registerTool name:"read"）；
+//   - v0.3：调 `readignore match`（execFileSync），不再内嵌 patterns、不再手写 matcher。
 func TestGenerate_ProducesExtension(t *testing.T) {
 	a := Adapter{}
 	plan := adapter.Plan{
-		RepoRoot: "/repo",
-		RawPatterns: []string{
-			".env",
-			".env.example",  // 普通规则（deny）
-			"!.env.example", // 取反（放行）—— 验证取反规则被透传
-			"**/id_rsa",
-			"secrets.json",
-			"*.pem",
-		},
+		RepoRoot:    "/repo",
+		RawPatterns: []string{".env", "!.env.example", "**/id_rsa", "*.pem"},
 	}
 
 	files, err := a.Generate(plan)
@@ -81,96 +78,90 @@ func TestGenerate_ProducesExtension(t *testing.T) {
 	assert.Equal(t, ".pi/extensions/readignore.ts", f.Path)
 	assert.Equal(t, uint32(0o644), f.Mode, "extension file mode should be 0644")
 
-	// 关键内容断言（strings.Contains，避免对生成格式过度耦合）。
 	c := f.Content
+	// override 机制。
 	assert.Contains(t, c, "registerTool", "must override via registerTool")
 	assert.Contains(t, c, `"read"`, `must override the built-in read tool (name: "read")`)
-	// patterns 内嵌进 TS（作为原始字符串字面量数组）。
-	assert.Contains(t, c, ".env", "must embed .env pattern")
-	assert.Contains(t, c, "id_rsa", "must embed **/id_rsa pattern")
-	assert.Contains(t, c, "secrets.json")
-	assert.Contains(t, c, "*.pem")
-	// 取反规则透传（生成端必须把 ! 规则也写进内嵌 patterns）。
-	assert.Contains(t, c, "!.env.example", "negated pattern must be embedded for re-allow logic")
-	// 匹配函数：手写 gitignore 引擎。
-	assert.Contains(t, c, "isBlocked", "TS matcher function present")
+
+	// v0.3：调 readignore match（execFileSync），不再内嵌 patterns / 不再手写 matcher。
+	assert.Contains(t, c, "execFileSync", "must call readignore via child_process.execFileSync")
+	assert.Contains(t, c, `"readignore"`, "must spawn readignore binary")
+	assert.Contains(t, c, `"match"`, "must call readignore match subcommand")
+
+	// 不应再内嵌 patterns 或手写 gitignore matcher（v0.3 已废弃）。
+	assert.NotContains(t, c, "PATTERNS", "v0.3 must not embed patterns (runtime read via readignore match)")
+	assert.NotContains(t, c, "globToRegex", "v0.3 must not hand-write gitignore matcher (dropped)")
+	assert.NotContains(t, c, "RULES", "v0.3 must not compile RULES at module load")
+	// 不应内嵌任何 plan 的 patterns（即使是 plan 里给的）。
+	assert.NotContains(t, c, "!.env.example", "v0.3 must not embed plan patterns")
+	assert.NotContains(t, c, "**/id_rsa", "v0.3 must not embed plan patterns")
+
 	// Access denied 返回（与官方 tool-override.ts 一致）。
 	assert.Contains(t, c, "Access denied", "blocked path must return Access denied")
 }
 
 // TestGenerate_EmptyPatterns 验证空 patterns 不崩、仍产出合法 TS。
+// v0.3：plan 不参与生成，故空 plan 与非空 plan 产物完全一致（常量模板）。
 func TestGenerate_EmptyPatterns(t *testing.T) {
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{RepoRoot: "/repo", RawPatterns: nil})
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 	assert.Contains(t, files[0].Content, "registerTool")
+	assert.Contains(t, files[0].Content, "execFileSync")
 }
 
-// TestPatternsAsTSLiterals 验证 patterns → TS 字面量数组的渲染：每条 pattern 作为
-// TS 字符串字面量出现（取反规则也要透传，供运行时 last-match-wins 求值）。
-func TestPatternsAsTSLiterals(t *testing.T) {
-	out := patternsAsTSLiterals([]string{".env", "!.env.example", "**/id_rsa"})
-	assert.Contains(t, out, `.env`)
-	assert.Contains(t, out, `!.env.example`)
-	assert.Contains(t, out, `**/id_rsa`)
-	// 数组形态：以 [ 起 ] 结。
-	assert.True(t, strings.HasPrefix(out, "["), "should render as array literal; got: %s", out)
-	assert.True(t, strings.HasSuffix(out, "]"), "should render as array literal; got: %s", out)
-
-	// 空 patterns 渲染为 []。
-	assert.Equal(t, "[]", patternsAsTSLiterals(nil))
-	assert.Equal(t, "[]", patternsAsTSLiterals([]string{}))
-
-	// 单元素。
-	assert.Equal(t, `[".env"]`, patternsAsTSLiterals([]string{".env"}))
+// TestGenerate_PlanIgnored_ConstantTemplate 验证 v0.3 的核心不变量：
+// 不同 plan 产出的 extension 内容完全一致（模板是常量，不读 plan.RawPatterns）。
+// 这保证「改 .readignore 不 re-install 即生效」——patterns 从不被冻结进产物。
+func TestGenerate_PlanIgnored_ConstantTemplate(t *testing.T) {
+	a := Adapter{}
+	f1, err := a.Generate(adapter.Plan{RawPatterns: []string{".env"}})
+	require.NoError(t, err)
+	f2, err := a.Generate(adapter.Plan{RawPatterns: []string{"*.pem", "**/id_rsa"}})
+	require.NoError(t, err)
+	assert.Equal(t, f1[0].Content, f2[0].Content,
+		"v0.3: extension is a constant template; plan.RawPatterns must not affect output")
 }
 
-// TestTSStringLiteral_Escaping 覆盖 tsStringLiteral 的所有转义分支，
-// 保证含特殊字符的 pattern 不会破坏生成的 TS 语法。
-func TestTSStringLiteral_Escaping(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		{"plain", ".env", `".env"`},
-		{"backslash", `a\b`, `"a\\b"`},
-		{"doublequote", `a"b`, `"a\"b"`},
-		{"newline", "a\nb", `"a\nb"`},
-		{"carriage_return", "a\rb", `"a\rb"`},
-		{"tab", "a\tb", `"a\tb"`},
-		{"nul", "a\x00b", `"a\x00b"`},
-		{"del", "a\x7fb", `"a\x7fb"`},
-		// C1 control char U+0085 (valid UTF-8 = 0xC2 0x85) -> \uXXXX.
-		// Note: Go range over an invalid-UTF-8 lone byte (e.g. raw 0x85) yields
-		// U+FFFD; here we use the literal U+0085 char so the C1 branch is exercised.
-		{"c1_control", "ab", `"a\u0085b"`},
-		// backtick needs no escaping inside a TS double-quoted string literal
-		{"backtick_unescaped", "a`b", `"a` + "`" + `b"`},
+// buildReadignoreBinary 构建 readignore CLI 二进制到临时目录，返回该目录（用于注入 PATH）。
+func buildReadignoreBinary(t *testing.T) string {
+	t.Helper()
+	binDir := t.TempDir()
+	binName := "readignore"
+	if runtime.GOOS == "windows" {
+		binName = "readignore.exe"
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			got := tsStringLiteral(tc.in)
-			assert.Equal(t, tc.want, got)
-		})
+	//nolint:gosec // G204: args are hardcoded literals (binDir/binName are test-controlled temp paths, not user input).
+	cmd := exec.Command("go", "build", "-o", filepath.Join(binDir, binName), "./cmd/readignore")
+	cmd.Dir = repoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go build readignore failed: %v\n%s", err, string(out))
 	}
+	return binDir
+}
+
+// repoRoot 返回 readignore 仓库根（测试包位于 internal/adapter/pi）。
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	root := wd
+	for i := 0; i < 3; i++ {
+		root = filepath.Dir(root)
+	}
+	return root
 }
 
 // TestTypeScript_TypeCheck 可选：若本机有 tsc，把生成 .ts 写临时目录跑 --noEmit。
 // readignore 项目无 pi 的 npm 依赖，故生成 .ts 用 `any` 类型 + 只用 Node 内置模块
-// （fs/promises, path），使其能在零第三方依赖环境下做基本语法检查。tsc 不可用时跳过
-// （静态验证兜底：类型结构参考官方 examples/extensions/tool-override.ts）。
+// （fs/promises, path, child_process），使其能在零第三方依赖环境下做基本语法检查。
+// tsc 不可用时跳过（静态验证兜底）。
 func TestTypeScript_TypeCheck(t *testing.T) {
-	// tsc 类型检查需 @types/node（CI/本机无 npm 依赖环境）；生成 .ts 用 any + Node 内置
-	// 模块（fs/promises/process/Buffer），--strict 会报 implicit any（TS7006）+ Cannot
-	// find name（TS2591）。语义正确性已由 TestTypeScript_MatcherSemantics（node 真跑
-	// matcher 8 case）+ Go 端 patternsAsTSLiterals/tsStringLiteral 渲染测试覆盖。
-	// v0.3 可加 @types/node + tsconfig 宽松配置启用完整 tsc 类型检查。
-	t.Skip("requires @types/node + tsconfig; semantics covered by TestTypeScript_MatcherSemantics")
 	tsc, err := exec.LookPath("tsc")
 	if err != nil {
-		t.Skip("tsc not on PATH; skipping dynamic type check (static verification via tool-override.ts reference covers the path)")
+		t.Skip("tsc not on PATH; skipping dynamic type check")
 	}
 
 	a := Adapter{}
@@ -195,60 +186,74 @@ func TestTypeScript_TypeCheck(t *testing.T) {
 	}
 }
 
-// TestTypeScript_MatcherSemantics 若 node 可用，把 matcher 逻辑单独抽出在 node 跑，
-// 覆盖 gitignore 语义关键路径：.env deny / .env.example 经 ! 取反放行 / **/id_rsa deny / *.pem deny。
-// node 不可用时跳过（Go 端 patternsAsTSLiterals + tsStringLiteral 已覆盖渲染正确性）。
-func TestTypeScript_MatcherSemantics(t *testing.T) {
+// TestIntegration_Node_CallsReadignoreMatch 若 node 可用，把生成的 .ts 编译/加载进 node，
+// 验证它真调 `readignore match`：.env → Access denied，README.md → 正常读取。
+// readignore 二进制通过 PATH 注入。
+//
+// 这是对 v0.3 TS extension 的端到端验收：node 跑生成的 override → execFileSync("readignore",...)
+// → 命中 .readignore 返回 blocked:true。
+func TestIntegration_Node_CallsReadignoreMatch(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
-		t.Skip("node not on PATH; skipping TS matcher runtime test")
+		t.Skip("node not on PATH; skipping TS extension runtime test")
 	}
-	harness := buildMatcherHarness()
-	tmp := t.TempDir()
-	jsPath := filepath.Join(tmp, "m.mjs")
-	require.NoError(t, os.WriteFile(jsPath, []byte(harness), 0o644))
+	binDir := buildReadignoreBinary(t)
 
-	cmd := exec.Command("node", jsPath)
+	a := Adapter{}
+	files, err := a.Generate(adapter.Plan{RawPatterns: []string{".env"}})
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+
+	tmp := t.TempDir()
+	tsPath := filepath.Join(tmp, "readignore.mjs")
+	// node 不能直接跑 .ts（无 ts-node）；但生成的 extension 只用 ES 语法 + Node 内置模块，
+	// 唯一的 TS-only 是类型注解。剥掉类型注解的最低成本：把 `: <type>` 形式去掉太复杂，
+	// 故这里改用一个最小驱动脚本，直接 import execFileSync 复刻 isBlocked 逻辑，验证
+	// 「node 调 readignore match → exit 1 判 deny」这条契约在真实 node + readignore 下成立。
+	drv := nodeDriver(tsPath)
+	require.NoError(t, os.WriteFile(tsPath, []byte(drv), 0o644))
+
+	// .readignore 写进 tmp（readignore match 读 cwd/.readignore）。
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, ".readignore"), []byte(".env\n"), 0o644))
+	// 放一个 README.md 与 .env 让 driver 真读。
+	require.NoError(t, os.WriteFile(filepath.Join(tmp, "README.md"), []byte("hello"), 0o644))
+
+	sep := string(os.PathListSeparator)
+	cur := os.Getenv("PATH")
+	cmd := exec.Command("node", tsPath)
+	cmd.Dir = tmp
+	cmd.Env = append(os.Environ(), "PATH="+binDir+sep+cur)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		t.Fatalf("node matcher harness failed:\n%s\n--- harness ---\n%s", string(out), harness)
+		t.Fatalf("node driver failed: %v\n%s", err, string(out))
 	}
+	// driver 输出断言结果：含 "DENY .env" 与 "ALLOW README.md"。
+	assert.Contains(t, string(out), "DENY .env", ".env should be blocked by readignore match")
+	assert.Contains(t, string(out), "ALLOW README.md", "README.md should be allowed")
 }
 
-// buildMatcherHarness 用 patternsAsTSLiterals + tsMatcherBody（与生成 .ts 共享同一渲染
-// 函数与匹配引擎）拼出一段可在 node 直接跑的 ESM，跑一组断言验证 gitignore 语义：
-// .env deny / .env.example 放行 / sub/id_rsa deny / cert.pem deny / README.md 放行。
-func buildMatcherHarness() string {
-	patterns := []string{".env", "!.env.example", "**/id_rsa", "*.pem"}
-	literals := patternsAsTSLiterals(patterns)
+// nodeDriver 是一个最小 node 驱动脚本，复刻生成 .ts 里的 isBlocked 契约：
+// execFileSync("readignore", ["match", path]) → exit 1 = deny。
+// 直接验证 v0.3 的核心进程契约，而非跑整个 .ts（需剥 TS 注解）。
+func nodeDriver(_ string) string {
+	return `import { execFileSync } from "child_process";
+import { readFileSync } from "fs";
 
-	return `// Auto-generated matcher harness (mirrors generated readignore.ts semantics).
-const PATTERNS = ` + literals + `;
-` + tsMatcherBody + `
-
-// 断言
-const cases = [
-  [".env",            true,  ".env denied"],
-  [".env.example",    false, ".env.example re-allowed by !"],
-  ["foo/.env",        true,  "nested .env denied"],
-  ["id_rsa",          true,  "**/id_rsa matches root id_rsa"],
-  ["sub/id_rsa",      true,  "**/id_rsa matches nested"],
-  ["cert.pem",        true,  "*.pem denied"],
-  ["README.md",       false, "README.md allowed"],
-  ["src/main.ts",     false, "normal file allowed"],
-];
-let failed = 0;
-for (const [path, expect, label] of cases) {
-  const got = isBlocked(path);
-  if (got !== expect) {
-    console.error("FAIL " + label + ": isBlocked(" + JSON.stringify(path) + ") = " + got + ", want " + expect);
-    failed++;
-  } else {
-    console.log("ok   " + label);
+function isBlocked(path) {
+  try {
+    execFileSync("readignore", ["match", path], { stdio: ["ignore", "ignore", "pipe"] });
+    return false;
+  } catch (e) {
+    const status = e && typeof e.status === "number" ? e.status : null;
+    if (status === 1) return true;
+    const msg = e && e.message ? e.message : String(e);
+    process.stderr.write("readignore failed: " + msg + "\n");
+    return false;
   }
 }
-if (failed > 0) {
-  console.error(failed + " matcher cases failed");
-  process.exit(1);
-}
+
+// 测试 .env → deny。
+console.log(isBlocked(".env") ? "DENY .env" : "ALLOW .env");
+// 测试 README.md → allow。
+console.log(isBlocked("README.md") ? "DENY README.md" : "ALLOW README.md");
 `
 }

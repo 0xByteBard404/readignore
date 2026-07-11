@@ -13,7 +13,7 @@ import (
 	"github.com/0xByteBard404/readignore/internal/adapter"
 )
 
-// install claude-code：写三个文件，sh 可执行（0755）。
+// install claude-code：写两个文件（v0.3：sh + settings.json），sh 可执行（0755）。
 func TestInstall_ClaudeCode_WritesFiles(t *testing.T) {
 	dir := chdirTemp(t)
 	writeFile(t, ".", ".readignore", ".env\n*.pem\n")
@@ -22,14 +22,16 @@ func TestInstall_ClaudeCode_WritesFiles(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, out, "写入")
 
-	// 三个产物均存在。
+	// v0.3：两个产物均存在（不再生成 readignore.py）。
 	for _, rel := range []string{
 		".claude/hooks/readignore.sh",
-		".claude/hooks/readignore.py",
 		".claude/settings.json",
 	} {
 		assert.FileExistsf(t, filepath.Join(dir, filepath.FromSlash(rel)), "应写入 %s", rel)
 	}
+	// readignore.py 不应再生成（py 引擎废弃）。
+	assert.NoFileExistsf(t, filepath.Join(dir, ".claude/hooks/readignore.py"),
+		"v0.3 不应生成 readignore.py")
 
 	// sh 应可执行（0755）。Windows 无可执行位概念，跳过权限断言。
 	if runtime.GOOS != "windows" {
@@ -37,12 +39,6 @@ func TestInstall_ClaudeCode_WritesFiles(t *testing.T) {
 		require.NoError(t, statErr)
 		// 任何用户可执行位（u+x / g+x / o+x 任一）即判定可执行。
 		assert.NotZero(t, fi.Mode().Perm()&0o111, "readignore.sh 应可执行，实际 %o", fi.Mode().Perm())
-	}
-	// py 不需要可执行（0644）。
-	fi, err := os.Stat(filepath.Join(dir, ".claude/hooks/readignore.py"))
-	require.NoError(t, err)
-	if runtime.GOOS != "windows" {
-		assert.Zero(t, fi.Mode().Perm()&0o111, "readignore.py 不应可执行")
 	}
 }
 
@@ -173,7 +169,7 @@ func TestInstall_AllSkipped_NoInstructions(t *testing.T) {
 //
 // 跨平台触发写失败：在 cwd 下预置一个名为 .claude 的【普通文件】。
 // install claude-code 尝试 MkdirAll(.claude/hooks) 时，因 .claude 是文件而非目录
-// 失败（MkdirAll 要求路径段是目录）→ 三个产物写盘均失败 → runInstall 返回 error。
+// 失败（MkdirAll 要求路径段是目录）→ 产物写盘失败 → runInstall 返回 error。
 // 此法不依赖只读目录权限（Windows 不强制），Windows/POSIX 均稳定复现。
 func TestInstall_PartialWriteFailure_ReturnsError(t *testing.T) {
 	dir := chdirTemp(t)
@@ -182,7 +178,7 @@ func TestInstall_PartialWriteFailure_ReturnsError(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, ".claude"), []byte("block"), 0o644))
 
 	out, err := runCmd(t, []string{"install", "claude-code"})
-	// 三个产物都写失败 → runInstall 返回 error → CLI exit 非 0。
+	// 产物写失败 → runInstall 返回 error → CLI exit 非 0。
 	require.Error(t, err, "部分文件写失败应返回 error")
 	assert.Contains(t, err.Error(), "部分文件写入失败")
 	// 失败明细打到 stdout。
@@ -204,14 +200,14 @@ func TestWriteGeneratedFiles_FailedCounted(t *testing.T) {
 	a := mustGetAdapter(t, "claude-code")
 	files, err := a.Generate(adapter.Plan{RepoRoot: dir, RawPatterns: []string{".env"}})
 	require.NoError(t, err)
-	require.Len(t, files, 3)
+	require.Len(t, files, 2) // v0.3：sh + settings.json
 
 	buf := &bytes.Buffer{}
 	// repoRoot=普通文件 → 产物路径 join 后的父目录 MkdirAll 必失败。
 	installed, skipped, failed, total := writeGeneratedFiles(buf, notADir, a.ID(), files, false)
-	assert.Equal(t, 3, total)
+	assert.Equal(t, 2, total)
 	assert.Equal(t, 0, installed)
 	assert.Equal(t, 0, skipped)
-	assert.Equal(t, 3, failed, "三个产物都因 MkdirAll 失败应全部计入 failed")
+	assert.Equal(t, 2, failed, "两个产物都因 MkdirAll 失败应全部计入 failed")
 	assert.Contains(t, buf.String(), "失败")
 }

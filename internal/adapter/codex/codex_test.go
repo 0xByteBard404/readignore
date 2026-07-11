@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -57,8 +58,39 @@ func TestAdapter_ID_Detect_Instructions(t *testing.T) {
 		"InstallInstructions should mention hook trust; got: %s", instr)
 }
 
-// TestGenerate_ProducesCodexHookFiles 验证 Generate 产出 3 个文件：
-// 路径、权限位正确（sh 0755 / py 0644 / hooks.json 0），hooks.json 合法且含
+// buildReadignoreBinary 构建 readignore CLI 二进制到临时目录，返回该目录（用于注入 PATH）。
+// v0.3 起 sh hook 调 `readignore match`（命令名），集成测试必须让 shell 能找到 readignore。
+func buildReadignoreBinary(t *testing.T) string {
+	t.Helper()
+	binDir := t.TempDir()
+	binName := "readignore"
+	if runtime.GOOS == "windows" {
+		binName = "readignore.exe"
+	}
+	//nolint:gosec // G204: args are hardcoded literals (binDir/binName are test-controlled temp paths, not user input).
+	cmd := exec.Command("go", "build", "-o", filepath.Join(binDir, binName), "./cmd/readignore")
+	cmd.Dir = repoRoot(t)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go build readignore failed: %v\n%s", err, string(out))
+	}
+	return binDir
+}
+
+// repoRoot 返回 readignore 仓库根（测试包位于 internal/adapter/codex）。
+func repoRoot(t *testing.T) string {
+	t.Helper()
+	wd, err := os.Getwd()
+	require.NoError(t, err)
+	root := wd
+	for i := 0; i < 3; i++ {
+		root = filepath.Dir(root)
+	}
+	return root
+}
+
+// TestGenerate_ProducesCodexHookFiles 验证 Generate 产出 2 个文件：
+// 路径、权限位正确（sh 0755 / hooks.json 0），hooks.json 合法且含
 // PreToolUse + matcher + command 指向 .codex/hooks/readignore.sh。
 func TestGenerate_ProducesCodexHookFiles(t *testing.T) {
 	a := Adapter{}
@@ -66,7 +98,7 @@ func TestGenerate_ProducesCodexHookFiles(t *testing.T) {
 		RawPatterns: []string{".env", "!.env.example"},
 	})
 	require.NoError(t, err)
-	require.Len(t, files, 3, "codex adapter must generate exactly 3 files")
+	require.Len(t, files, 2, "codex adapter must generate exactly 2 files (sh + hooks.json)")
 
 	byPath := map[string]adapter.GeneratedFile{}
 	for _, f := range files {
@@ -77,17 +109,16 @@ func TestGenerate_ProducesCodexHookFiles(t *testing.T) {
 		f, ok := byPath[".codex/hooks/readignore.sh"]
 		require.True(t, ok, "must produce .codex/hooks/readignore.sh")
 		assert.Equal(t, uint32(0o755), f.Mode, "hook must be executable")
-		// sh 复用 shared hookengine：必须含 python 探测与 deny JSON 输出。
-		assert.Contains(t, f.Content, "readignore.py")
+		// v0.3：sh 调 readignore match（go-git 权威），不再调 readignore.py。
+		assert.Contains(t, f.Content, "readignore match")
+		assert.NotContains(t, f.Content, "readignore.py", "sh must not reference dropped py engine")
 		assert.Contains(t, f.Content, "permissionDecision")
 	})
 
-	t.Run("readignore.py 0644 patterns embedded", func(t *testing.T) {
-		f, ok := byPath[".codex/hooks/readignore.py"]
-		require.True(t, ok, "must produce .codex/hooks/readignore.py")
-		assert.Equal(t, uint32(0o644), f.Mode)
-		assert.Contains(t, f.Content, "!.env.example")
-		assert.Contains(t, f.Content, "import re")
+	// v0.3：不再生成 readignore.py（py 引擎废弃）。
+	t.Run("no readignore.py generated", func(t *testing.T) {
+		_, ok := byPath[".codex/hooks/readignore.py"]
+		assert.False(t, ok, "codex must NOT generate readignore.py in v0.3")
 	})
 
 	t.Run("hooks.json valid + PreToolUse + matcher + command", func(t *testing.T) {
@@ -133,13 +164,14 @@ func TestGenerate_ProducesCodexHookFiles(t *testing.T) {
 	})
 }
 
-// writeHookFiles 把 Generate 的三个产物原样落盘到临时仓库根，供真跑 pipe-test。
+// writeHookFiles 把 Generate 的产物原样落盘到临时仓库根，并把 patterns 落盘成
+// repoRoot/.readignore。返回 repoRoot，供真跑 pipe-test。
 func writeHookFiles(t *testing.T, plan adapter.Plan) string {
 	t.Helper()
 	a := Adapter{}
 	files, err := a.Generate(plan)
 	require.NoError(t, err)
-	require.Len(t, files, 3)
+	require.Len(t, files, 2)
 
 	repoRoot := t.TempDir()
 	for _, f := range files {
@@ -152,11 +184,20 @@ func writeHookFiles(t *testing.T, plan adapter.Plan) string {
 		require.NoError(t, os.WriteFile(abs, []byte(f.Content), mode))
 		require.NoError(t, os.Chmod(abs, mode))
 	}
+	// v0.3：patterns 落盘成 cwd/.readignore（readignore match 运行时读）。
+	if len(plan.RawPatterns) > 0 {
+		require.NoError(t, os.WriteFile(
+			filepath.Join(repoRoot, ".readignore"),
+			[]byte(strings.Join(plan.RawPatterns, "\n")+"\n"),
+			0o644,
+		))
+	}
 	return repoRoot
 }
 
 // pipeTest 真跑：printf '<json>' | bash <repoRoot>/.codex/hooks/readignore.sh
-func pipeTest(t *testing.T, repoRoot, jsonInput string) (string, string, int) {
+// readignore 二进制通过 PATH 注入（binDir）。
+func pipeTest(t *testing.T, repoRoot, binDir, jsonInput string) (string, string, int) {
 	t.Helper()
 	shPath := filepath.Join(repoRoot, ".codex", "hooks", "readignore.sh")
 	require.FileExists(t, shPath)
@@ -164,6 +205,9 @@ func pipeTest(t *testing.T, repoRoot, jsonInput string) (string, string, int) {
 	cmd := exec.Command("bash", shPath)
 	cmd.Dir = repoRoot
 	cmd.Stdin = strings.NewReader(jsonInput)
+	sep := string(os.PathListSeparator)
+	cur := os.Getenv("PATH")
+	cmd.Env = append(os.Environ(), "PATH="+binDir+sep+cur)
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -183,32 +227,30 @@ func denyJSON(tool, field, value string) string {
 	return `{"tool_name":"` + tool + `","tool_input":{"` + field + `":"` + value + `"}}`
 }
 
-func denyCase(t *testing.T, repoRoot, label, tool, field, value string) {
+func denyCase(t *testing.T, repoRoot, binDir, label, tool, field, value string) {
 	t.Helper()
-	out, _, _ := pipeTest(t, repoRoot, denyJSON(tool, field, value))
+	out, _, _ := pipeTest(t, repoRoot, binDir, denyJSON(tool, field, value))
 	if !assert.Containsf(t, out, `"permissionDecision":"deny"`,
 		"[%s] expected DENY but got stdout=%q", label, out) {
 		t.Logf("input: tool=%s %s=%s", tool, field, value)
 	}
 }
 
-func allowCase(t *testing.T, repoRoot, label, tool, field, value string) {
+func allowCase(t *testing.T, repoRoot, binDir, label, tool, field, value string) {
 	t.Helper()
-	out, _, _ := pipeTest(t, repoRoot, denyJSON(tool, field, value))
+	out, _, _ := pipeTest(t, repoRoot, binDir, denyJSON(tool, field, value))
 	assert.NotContainsf(t, out, `"permissionDecision":"deny"`,
 		"[%s] expected ALLOW (no deny) but got stdout=%q", label, out)
 }
 
 // TestIntegration_PipeTest_RealGeneratedScripts 是核心集成测试：
-// 构造 plan → Generate → 落盘 → bash 真跑 sh+py → 断言 deny/allow。
+// 构造 plan → Generate → 落盘 → bash 真跑 sh → sh 调 readignore match → 断言 deny/allow。
 //
 // codex 的 PreToolUse tool_input 字段名经源码确认：
 //   - Bash 工具的 tool_input 为 {"command": "..."}（与 Claude Code 一致）；
 //   - codex 同时把 tool_name 暴露为 "Bash"（matcher 用 exact pipe 语法）。
-//
-// 即便 codex 内部原生工具是 shell/apply_patch，PreToolUse hook 收到的 tool_name
-// 已是 Claude-style 的 "Bash"，故 shared sh 的 extract_field("command") 直接复用。
 func TestIntegration_PipeTest_RealGeneratedScripts(t *testing.T) {
+	binDir := buildReadignoreBinary(t)
 	patterns := []string{".env", ".env.*", "!.env.example", "*.pem", "**/id_rsa", ".env.local", ".env.production"}
 
 	plan := adapter.Plan{
@@ -219,30 +261,49 @@ func TestIntegration_PipeTest_RealGeneratedScripts(t *testing.T) {
 	repoRoot := writeHookFiles(t, plan)
 
 	// codex 实际 hook 走 Bash 工具 + command 字段（源码 core/tests/suite/hooks.rs:3242 确认）。
-	denyCase(t, repoRoot, "Bash cat .env (command 含 .env)", "Bash", "command", "cat .env")
-	denyCase(t, repoRoot, "Bash cat .env.production", "Bash", "command", "cat .env.production")
-	allowCase(t, repoRoot, "Bash cat .env.example (取反放行)", "Bash", "command", "cat .env.example")
-	denyCase(t, repoRoot, "Bash cat .env.sample (命中 .env.* 未取反)", "Bash", "command", "cat .env.sample")
-	allowCase(t, repoRoot, "Bash cat README.md", "Bash", "command", "cat README.md")
+	denyCase(t, repoRoot, binDir, "Bash cat .env (command 含 .env)", "Bash", "command", "cat .env")
+	denyCase(t, repoRoot, binDir, "Bash cat .env.production", "Bash", "command", "cat .env.production")
+	allowCase(t, repoRoot, binDir, "Bash cat .env.example (取反放行)", "Bash", "command", "cat .env.example")
+	denyCase(t, repoRoot, binDir, "Bash cat .env.sample (命中 .env.* 未取反)", "Bash", "command", "cat .env.sample")
+	allowCase(t, repoRoot, binDir, "Bash cat README.md", "Bash", "command", "cat README.md")
 
 	// ** 任意层级：sub/dir/id_rsa 必须命中。
-	denyCase(t, repoRoot, "Bash cat sub/dir/id_rsa (** 任意层级)", "Bash", "command", "cat sub/dir/id_rsa")
+	denyCase(t, repoRoot, binDir, "Bash cat sub/dir/id_rsa (** 任意层级)", "Bash", "command", "cat sub/dir/id_rsa")
 
 	// shared sh 也抽 file_path/path/pattern（Claude-style 工具名），
 	// codex 若未来暴露 Read/Grep/Glob 同名工具，这些字段同样覆盖。
-	denyCase(t, repoRoot, "Read .env (file_path)", "Read", "file_path", ".env")
-	allowCase(t, repoRoot, "Read .env.example (取反)", "Read", "file_path", ".env.example")
-	denyCase(t, repoRoot, "Read sub/id_rsa (** 任意层级)", "Read", "file_path", "sub/id_rsa")
-	denyCase(t, repoRoot, "Grep path=.env", "Grep", "path", ".env")
-	denyCase(t, repoRoot, "Glob pattern=configs/server.pem", "Glob", "pattern", "configs/server.pem")
+	denyCase(t, repoRoot, binDir, "Read .env (file_path)", "Read", "file_path", ".env")
+	allowCase(t, repoRoot, binDir, "Read .env.example (取反)", "Read", "file_path", ".env.example")
+	denyCase(t, repoRoot, binDir, "Read sub/id_rsa (** 任意层级)", "Read", "file_path", "sub/id_rsa")
+	denyCase(t, repoRoot, binDir, "Grep path=.env", "Grep", "path", ".env")
+	denyCase(t, repoRoot, binDir, "Glob pattern=configs/server.pem", "Glob", "pattern", "configs/server.pem")
 }
 
 // TestGenerate_EmptyPatterns 空 plan 不应崩溃，真跑必放行。
 func TestGenerate_EmptyPatterns(t *testing.T) {
+	binDir := buildReadignoreBinary(t)
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{})
 	require.NoError(t, err)
-	require.Len(t, files, 3)
+	require.Len(t, files, 2)
 	repoRoot := writeHookFiles(t, adapter.Plan{})
-	allowCase(t, repoRoot, "empty patterns allow .env", "Bash", "command", "cat .env")
+	allowCase(t, repoRoot, binDir, "empty patterns allow .env", "Bash", "command", "cat .env")
+}
+
+// TestIntegration_DynamicRead_NoReinstall 是 v0.3 的核心验收测试（codex 版）：
+// 改 .readignore 不 re-install → 立即生效。
+func TestIntegration_DynamicRead_NoReinstall(t *testing.T) {
+	binDir := buildReadignoreBinary(t)
+
+	plan := adapter.Plan{RawPatterns: []string{".env"}}
+	repoRoot := writeHookFiles(t, plan)
+
+	denyCase(t, repoRoot, binDir, "初始 .env deny", "Bash", "command", "cat .env")
+	allowCase(t, repoRoot, binDir, "初始 *.pem allow", "Bash", "command", "cat secret.pem")
+
+	// 不 re-install，直接改 .readignore。
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, ".readignore"), []byte(".env\n*.pem\n"), 0o644))
+
+	denyCase(t, repoRoot, binDir, "改 .readignore 后 *.pem 立即 deny", "Bash", "command", "cat secret.pem")
+	denyCase(t, repoRoot, binDir, "改 .readignore 后 .env 仍 deny", "Bash", "command", "cat .env")
 }

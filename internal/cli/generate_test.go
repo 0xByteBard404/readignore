@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// generate claude-code：解析 .readignore → stdout 含 sh/py/settings 产物。
+// generate claude-code：解析 .readignore → stdout 含 sh/settings 产物（v0.3 两件套）。
 func TestGenerate_ClaudeCode(t *testing.T) {
 	chdirTemp(t)
 	writeFile(t, ".", ".readignore", ".env\n*.pem\n!/.env.example\n")
@@ -16,14 +16,14 @@ func TestGenerate_ClaudeCode(t *testing.T) {
 	require.NoError(t, err)
 	// dry-run 提示。
 	assert.Contains(t, out, "dry-run")
-	// 三个产物路径。
+	// v0.3：两个产物路径（sh + settings.json；不再生成 readignore.py）。
 	assert.Contains(t, out, ".claude/hooks/readignore.sh")
-	assert.Contains(t, out, ".claude/hooks/readignore.py")
 	assert.Contains(t, out, ".claude/settings.json")
+	assert.NotContains(t, out, "readignore.py", "v0.3 must not generate readignore.py")
 	// sh 内容标记可执行（mode 0755 在头里）。
 	assert.Contains(t, out, "mode 755")
-	// 内嵌的规则进到 py 内容里。
-	assert.Contains(t, out, ".env")
+	// v0.3：sh 调 readignore match（go-git 权威），不内嵌 patterns。
+	assert.Contains(t, out, "readignore match")
 }
 
 // generate opencode：stdout 含 permission.read 的 deny 配置。

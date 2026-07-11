@@ -5,13 +5,15 @@
 // 工具来 override 它（官方 examples/extensions/tool-override.ts 即 override `read`
 // 拦截 .env——正是 readignore 想做的）。pi 因此归类为 Hard（最强拦截强度）。
 //
-// 与 claudecode/codex 不同，pi 是 TS 而非 sh+py：shared/hookengine（sh+py）不适用，
-// 本适配器单独实现一份手写 gitignore 匹配的 TS extension，零 npm 依赖（pi extension
-// 单文件加载，避免运行时 require 第三方 glob 库）。
+// v0.3 起匹配权威统一收敛到 `readignore match`（go-git format/gitignore）：生成的 TS
+// extension 不再内嵌 patterns、不再手写 gitignore matcher，而是 override 内置 `read`
+// 工具，execute 内调 child_process.execFileSync("readignore", ["match", path])，exit 1
+// 即 deny（Access denied）。.readignore 在运行时由 readignore match 直接读盘，故改
+// .readignore 不必 re-install 即立即生效（动态读核心价值）。
 //
 // 产物（Generate 返回，由调用方/安装层写入磁盘）：
-//   - .pi/extensions/readignore.ts  (0644)  override `read`：检查 path 命中
-//     patterns → 命中返回 Access denied，否则委托真正读取。
+//   - .pi/extensions/readignore.ts  (0644)  override `read`：调 `readignore match <path>`
+//     → exit 1（deny）返回 Access denied，否则委托真正 readFile。
 //
 // 源码确认要点（pi，packages/coding-agent，commit 见仓库）：
 //   - extension API：src/core/extensions/types.ts 的 ExtensionAPI.registerTool(tool: ToolDefinition)。
@@ -27,13 +29,9 @@
 package pi
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
-	"text/template"
-	"unicode"
 
 	"github.com/0xByteBard404/readignore/internal/adapter"
 )
@@ -57,7 +55,8 @@ func init() {
 func (Adapter) ID() string { return "pi" }
 
 // Strength 返回 [adapter.StrengthHard]：pi extension override 内置 read 工具，
-// 在 LLM 真正拿到文件内容前由 TS 判定并返回 Access denied，是当前支持的最强拦截强度。
+// 在 LLM 真正拿到文件内容前由 TS 判定（调 readignore match）并返回 Access denied，
+// 是当前支持的最强拦截强度。
 func (Adapter) Strength() adapter.Strength { return adapter.StrengthHard }
 
 // Detect 探测 repoRoot 下是否已存在 pi 痕迹：.pi/ 目录或 .pi/extensions/ 子目录。
@@ -79,28 +78,26 @@ func (Adapter) Detect(repoRoot string) bool {
 //
 // pi 启动时自动扫描 .pi/extensions/*.ts 并加载（loader.ts:672），故文件写入后
 // 下次启动 pi 即生效，无需额外配置。也可用 `pi -e ./readignore.ts` 临时加载。
+//
+// v0.3 提醒：本 extension 调 `readignore match`（go-git 权威），故 readignore 二进制
+// 必须在 pi 进程的 PATH 里；改 .readignore 无需 re-install 即立即生效。
 func (Adapter) InstallInstructions() string {
 	return "已写入 .pi/extensions/readignore.ts。pi 启动时自动扫描 .pi/extensions/*.ts " +
-		"并加载（无需额外配置），下次启动 pi 即生效。也可用 `pi -e ./readignore.ts` 临时加载。"
+		"并加载（无需额外配置），下次启动 pi 即生效。也可用 `pi -e ./readignore.ts` 临时加载。" +
+		"注意：本 extension 调 `readignore match`（go-git 权威），readignore 二进制必须在 " +
+		"PATH 里；改 .readignore 无需 re-install 即立即生效。"
 }
 
 // Generate 依据 plan 产出单个 TS extension 文件。
 //
-// 关键设计：
-//   - patterns 在此刻以 TS 字符串字面量数组内嵌进 readignore.ts（generate 时即冻结），
-//     运行时不读盘，避免 .readignore 缺失/漂移导致 override 行为不确定；
-//   - TS 匹配引擎**手写**（零 npm 依赖），覆盖 gitignore 语义子集：
-//   - `**/`  → 任意层级目录前缀（含零层）；
-//   - `**`   → 跨任意层级；
-//   - `*`    → 单层内任意非 / 字符；
-//   - `?`    → 单个非 / 字符；
-//   - 尾 `/` → 仅匹配目录（运行时无 stat，安全侧偏置：多拦而非少拦）；
-//   - 无 `/` → basename 匹配（任意层级同名条目）；
-//   - 取反 (`!`)：按文件顺序求值，最后一条命中者决定结果（与 go-git/py 引擎一致）。
-//   - override `read`：execute 内 isBlocked(params.path) → 命中返回 Access denied，
-//     否则委托真正 readFile（参考官方 tool-override.ts）。
+// v0.3 关键设计：
+//   - extension 模板是常量（extensionTmpl），不再注入 patterns——匹配判定全在
+//     `readignore match` 侧（读 cwd/.readignore），故改 .readignore 不必 re-install
+//     即立即生效（动态读核心价值）；
+//   - plan 不再参与生成（无 patterns/字面量注入），保留签名仅为满足 adapter.Adapter 契约。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
-	content, err := renderExtension(plan.RawPatterns)
+	_ = plan // v0.3: extension 是常量，不读 plan（readignore match 运行时读 cwd/.readignore）。
+	content, err := renderExtension()
 	if err != nil {
 		return nil, fmt.Errorf("pi: render extension: %w", err)
 	}
@@ -113,75 +110,8 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 	}, nil
 }
 
-// renderExtension 用 text/template 渲染 extension.ts.tmpl，注入 patterns 的 TS 字面量数组。
-func renderExtension(rawPatterns []string) (string, error) {
-	literals := patternsAsTSLiterals(rawPatterns)
-	tmpl, err := template.New("pi-extension").Parse(extensionTmpl)
-	if err != nil {
-		return "", fmt.Errorf("parse template: %w", err)
-	}
-	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, map[string]string{
-		"PatternsAsTSLiterals": literals,
-	}); err != nil {
-		return "", fmt.Errorf("execute template: %w", err)
-	}
-	return buf.String(), nil
-}
-
-// patternsAsTSLiterals 把 patterns 渲染成 TS 字符串字面量数组（双引号 + 转义）。
-//
-// 取反规则（!.env.example）原样透传，不在生成端折叠——运行时按文件顺序 last-match-wins
-// 求值更稳定（与 py 引擎语义一致）。空 patterns 渲染为 `[]`。
-//
-// 安全：逐字符转义反斜杠、双引号、换行、控制字符（NUL/VT/DEL 等），保证含特殊字符的
-// pattern 不会破坏生成的 TS 语法（与 hookengine.pythonRepr 同等严格）。
-func patternsAsTSLiterals(patterns []string) string {
-	if len(patterns) == 0 {
-		return "[]"
-	}
-	var b strings.Builder
-	b.WriteByte('[')
-	for i, s := range patterns {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(tsStringLiteral(s))
-	}
-	b.WriteByte(']')
-	return b.String()
-}
-
-// tsStringLiteral 渲染单个字符串为 TS 双引号字面量，转义反斜杠、双引号、换行、
-// 及所有控制字符（C0 0x00-0x1F 与 DEL 0x7F），保证含特殊字符的 pattern 不会破坏
-// 生成的 TS 语法。等价于 hookengine.pythonRepr 的转义策略，但产出 TS 合法（TS 与 JS
-// 双引号字符串转义规则一致：\ \" \n \r \t \xNN 均合法）。
-func tsStringLiteral(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '\\':
-			b.WriteString(`\\`)
-		case '"':
-			b.WriteString(`\"`)
-		case '\n':
-			b.WriteString(`\n`)
-		case '\r':
-			b.WriteString(`\r`)
-		case '\t':
-			b.WriteString(`\t`)
-		default:
-			if r < 0x20 || r == 0x7f {
-				fmt.Fprintf(&b, `\x%02x`, r)
-			} else if unicode.IsControl(r) {
-				// 其它 C1 控制字符（0x80-0x9F）也转义，避免生成 TS 含裸控制字符。
-				fmt.Fprintf(&b, `\u%04x`, r)
-			} else {
-				b.WriteRune(r)
-			}
-		}
-	}
-	b.WriteByte('"')
-	return b.String()
+// renderExtension 渲染 extension.ts.tmpl。v0.3 起模板无占位符（纯常量），
+// 但保留 text/template 解析路径以保持向前兼容（未来若需注入变量可加占位符）。
+func renderExtension() (string, error) {
+	return extensionTmpl, nil
 }

@@ -3,7 +3,7 @@
 //
 // codex 的 hook 协议与 Claude Code 高度近似（codex-rs/features/src/lib.rs:87 明示
 // "Claude-style lifecycle hooks"）：同为 PreToolUse 事件 + permissionDecision:"deny"
-// 决策。本适配器因此与 claudecode 共用 shared/hookengine 生成的 sh+py，仅在配置包装
+// 决策。本适配器因此与 claudecode 共用 shared/hookengine 生成的 sh，仅在配置包装
 // （hooks.json schema、文件落点 .codex/、hook 信任提示）上做 codex 专属处理。
 //
 // # 平台限制：拦截只走 Bash 命令路径
@@ -18,11 +18,13 @@
 // claudecode 适配器对称、便于共用 hookengine。但 codex 原生只有 Bash 一条路径命中，
 // 原生的「读文件」不会被独立 Read 工具触发（因为不存在该工具）。
 //
-// 产物三件套（Generate 返回，由调用方/安装层写入磁盘）：
+// 产物两件套（Generate 返回，由调用方/安装层写入磁盘）：
 //   - .codex/hooks/readignore.sh  (0755)  从 tool_input JSON 抽取目标路径/命令，
-//     交 readignore.py 判定，命中即输出 PreToolUse deny JSON；
-//   - .codex/hooks/readignore.py  (0644)  匹配引擎：标准库实现 gitignore 语义；
+//     调 `readignore match` 判定是否命中 cwd/.readignore，命中即输出 PreToolUse deny JSON；
 //   - .codex/hooks.json           (0)     PreToolUse 注册（Claude-style 结构）。
+//
+// v0.3 起 sh 调 `readignore match`（go-git 权威），不再 fork py 引擎；.readignore 在
+// 运行时由 readignore match 直接读盘，故改 .readignore 不必 re-install 即立即生效。
 //
 // 源码确认要点（codex-rs，commit 见仓库）：
 //   - hooks.json schema：config/src/hook_config.rs 的 HooksFile{description?, hooks: HookEventsToml}。
@@ -104,26 +106,23 @@ func (Adapter) InstallInstructions() string {
 		"用户自装的 MCP 同名工具与对称设计。"
 }
 
-// Generate 依据 plan 产出三个文件（sh / py / hooks.json）。
+// Generate 依据 plan 产出两个文件（sh / hooks.json）。
 //
-// 关键设计：
-//   - patterns 在此刻以合法 Python 字面量内嵌进 readignore.py（generate 时即冻结），
-//     运行时不再读盘，避免 .readignore 缺失/漂移导致 hook 行为不确定；
-//   - sh/py 内容由 [hookengine] 生成（与 claudecode 共用 Claude-style PreToolUse 协议）；
+// v0.3 关键设计：
+//   - sh 调 `readignore match`（go-git 权威），.readignore 在运行时由 match 读盘，
+//     故改 .readignore 不必 re-install 即立即生效（动态读核心价值）；
+//   - sh 内容由 [hookengine] 生成（与 claudecode 共用 Claude-style PreToolUse 协议）；
 //     codex 的 tool_input 字段名（command 等）与 Claude Code 一致，故 sh 直接复用；
+//     plan.RawPatterns 不再参与生成（sh 通用，不内嵌 patterns）；
 //   - hooks.json 是 codex 专属的配置包装（HooksFile schema），matcher 用 exact pipe，
 //     handler 字段仅 command/timeout（无 codex 不支持的 "shell" 字段）。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
+	_ = plan // v0.3: sh 通用，不读 plan（readignore match 运行时读 cwd/.readignore）。
 	return []adapter.GeneratedFile{
 		{
 			Path:    ".codex/hooks/readignore.sh",
 			Mode:    0o755,
-			Content: hookengine.BuildShScriptAt(plan.RawPatterns, ".codex/hooks/readignore.py"),
-		},
-		{
-			Path:    ".codex/hooks/readignore.py",
-			Mode:    0o644,
-			Content: hookengine.BuildPyEngine(plan.RawPatterns),
+			Content: hookengine.BuildShScript(),
 		},
 		{
 			Path:    ".codex/hooks.json",

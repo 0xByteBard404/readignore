@@ -2,17 +2,17 @@
 // 的 PreToolUse hook，实现「执行前可编程硬拦」—— 五个目标工具里唯一能在工具真正
 // 执行前用脚本判定并阻断的，故本包是 readignore 的参考实现。
 //
-// 产物三件套（Generate 返回，由调用方/安装层写入磁盘）：
+// 产物两件套（Generate 返回，由调用方/安装层写入磁盘）：
 //   - .claude/hooks/readignore.sh  (0755)  从 tool_input JSON 抽取目标路径/命令，
-//     交 readignore.py 判定，命中即输出 PreToolUse deny JSON；
-//   - .claude/hooks/readignore.py  (0644)  匹配引擎：用标准库实现 gitignore 语义
-//     (*、**、!、目录尾斜杠)，零第三方依赖；规则在 Generate 时内嵌；
+//     调 `readignore match` 判定是否命中 cwd/.readignore，命中即输出 PreToolUse deny JSON；
 //   - .claude/settings.json        (0)     PreToolUse 注册片段（与既有 settings.json
-//     的合并留给阶段5 CLI install 层，本适配器只 Generate 片段）。
+//     的合并留给 CLI install 层，本适配器只 Generate 片段）。
 //
-// v0.2 起 sh 与 py 内容由 [github.com/0xByteBard404/readignore/internal/adapter/shared/hookengine]
-// 生成（与 codex 适配器共用 Claude-style PreToolUse 协议）；本包只负责 Claude Code 专属的
-// 配置包装（settings.json 片段）与文件路径/权限位的拼装。
+// v0.3 起 sh 调 `readignore match`（go-git 权威），不再 fork py 引擎；.readignore 在
+// 运行时由 readignore match 直接读盘，故改 .readignore 不必 re-install 即立即生效。
+// sh 内容由 [github.com/0xByteBard404/readignore/internal/adapter/shared/hookengine]
+// 生成（与 codex 适配器共用 Claude-style PreToolUse 协议）；本包只负责 Claude Code
+// 专属的配置包装（settings.json 片段）与文件路径/权限位的拼装。
 //
 // init() 调 adapter.Register 自登记，CLI 通过 adapter.Get("claude-code") 发现本适配器。
 package claudecode
@@ -68,33 +68,21 @@ func (Adapter) InstallInstructions() string {
 	return "已写入 .claude/。Claude Code settings watcher 实时加载，无需重启。"
 }
 
-// Generate 依据 plan 产出三个文件（sh / py / settings.json）。
+// Generate 依据 plan 产出两个文件（sh / settings.json）。
 //
-// 关键设计：
-//   - patterns 在此刻以合法 Python 字面量内嵌进 readignore.py（generate 时即冻结），
-//     运行时不再读盘，避免 .readignore 缺失/漂移导致 hook 行为不确定；
-//   - sh 仅做 JSON 字段抽取（grep，无 jq 依赖），匹配判定全在 py 里，便于跨平台
-//     （sh 里只调 python，不在 bash 里重写匹配逻辑）；
+// v0.3 关键设计：
+//   - sh 调 `readignore match`（go-git 权威），.readignore 在运行时由 match 读盘，
+//     故改 .readignore 不必 re-install 即立即生效（动态读核心价值）；
+//   - sh 内容由 [hookengine] 生成（与 codex 适配器共用 Claude-style PreToolUse 协议），
+//     plan.RawPatterns 不再参与生成（sh 通用，不内嵌 patterns）；
 //   - settings.json 只 Generate PreToolUse 片段，与既有 settings 的合并由 CLI 完成。
-//
-// v0.2 起 sh/py 内容由 [hookengine] 包生成（codex 适配器共用同一引擎）；本方法只负责
-// 文件路径与权限位的 Claude Code 专属拼装。
-//
-// 已知限制（YAGNI，不在 v0.1.0/v0.2.0 修功能，仅文档诚实标注）：生成的 python 引擎不区分
-// 目录与文件——`foo/` 这类「仅目录」模式会命中非目录的 `foo`（hook 拿到的候选路径
-// 不带尾斜杠，引擎也无 stat 调用）。这是安全侧偏置（多拦而非少拦）：被多拦的普通
-// 文件 foo 仍可由用户加 `!foo` 取反放行。严格的目录/文件区分留待后续版本。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
+	_ = plan // v0.3: sh 通用，不读 plan（readignore match 运行时读 cwd/.readignore）。
 	return []adapter.GeneratedFile{
 		{
 			Path:    ".claude/hooks/readignore.sh",
 			Mode:    0o755,
-			Content: hookengine.BuildShScript(plan.RawPatterns),
-		},
-		{
-			Path:    ".claude/hooks/readignore.py",
-			Mode:    0o644,
-			Content: hookengine.BuildPyEngine(plan.RawPatterns),
+			Content: hookengine.BuildShScript(),
 		},
 		{
 			Path:    ".claude/settings.json",
