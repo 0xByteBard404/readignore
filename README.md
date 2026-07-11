@@ -26,13 +26,16 @@ that agent actually supports.
 ## How it works
 
 ```mermaid
-graph LR
+flowchart LR
   RI[".readignore<br/>(gitignore syntax)"] --> CLI["readignore CLI<br/>parse + adapt"]
-  CLI --> CC["Claude Code<br/>PreToolUse hook 🔒"]
-  CLI --> CX["codex CLI<br/>PreToolUse hook 🔒"]
-  CLI --> PI["pi<br/>TS override read 🔒"]
+  subgraph hard ["hard — blocks before execution 🔒"]
+    CC["Claude Code"]
+    CX["codex CLI"]
+    PI["pi"]
+  end
+  CLI --> CC & CX & PI
   CLI --> OC["opencode<br/>permissions deny"]
-  CLI --> CU["Cursor<br/>roadmap 🗺"]
+  CLI -.-> CU["Cursor<br/>roadmap 🗺"]
 ```
 
 You write one declarative `.readignore`. readignore translates it into the
