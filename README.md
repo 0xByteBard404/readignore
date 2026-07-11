@@ -33,13 +33,6 @@ graph LR
   CLI --> PI["pi<br/>TS override read 🔒"]
   CLI --> OC["opencode<br/>permissions deny"]
   CLI --> CU["Cursor<br/>roadmap 🗺"]
-  style RI fill:#f0f4ff,stroke:#4a6fa5
-  style CLI fill:#e8f5e9,stroke:#2e7d32
-  style CC fill:#fff3e0,stroke:#e65100
-  style CX fill:#fff3e0,stroke:#e65100
-  style PI fill:#fff3e0,stroke:#e65100
-  style OC fill:#fce4ec,stroke:#c62828
-  style CU fill:#f5f5f5,stroke:#999
 ```
 
 You write one declarative `.readignore`. readignore translates it into the
