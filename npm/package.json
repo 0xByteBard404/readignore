@@ -1,6 +1,6 @@
 {
   "name": "readignore",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": ".gitignore for AI coding agents — declare files your AI agent must not read.",
   "bin": { "readignore": "bin.js" },
   "scripts": { "postinstall": "node postinstall.js" },
