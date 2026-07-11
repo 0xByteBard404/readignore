@@ -10,6 +10,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-11
+
+The match authority is unified: every hook now calls `readignore match` (go-git
+gitignore engine), so **editing `.readignore` takes effect immediately** — no
+re-install needed. The Python match engine and the pi hand-written TS matcher
+are gone (-486 lines net). Install gets easier too: `curl | sh` and Homebrew.
+
+匹配权威统一：所有钩子现调 `readignore match`（go-git gitignore 引擎），因此
+**改 `.readignore` 立即生效**——无需重新 install。Python 匹配引擎与 pi 手写 TS
+matcher 已移除（净减 486 行）。安装也更方便：`curl | sh` 与 Homebrew。
+
+### Added / 新增
+
+- **`readignore match` subcommand** (`internal/cli`): authoritative gitignore
+  match via go-git's `format/gitignore`. `readignore match <path>` exits `0` if
+  the path is allowed (not matched) and `1` if denied (matched against
+  `cwd/.readignore`). Reads the file live on every call — the single source of
+  truth for all hooks.
+  — **`readignore match` 子命令**（`internal/cli`）：基于 go-git
+    `format/gitignore` 的权威 gitignore 匹配。`readignore match <path>` 路径放行
+    （未命中）退出 `0`，命中（匹配 `cwd/.readignore`）退出 `1`。每次调用都实时读盘
+    ——所有钩子的唯一匹配权威。
+- **Dynamic `.readignore` (no re-install)**: hooks re-read `cwd/.readignore` via
+  `readignore match` on every tool call. Editing rules takes effect immediately,
+  matching the `.gitignore` edit-and-go experience. This is the core v0.3
+  value: previously you had to re-run `install` after editing `.readignore` to
+  re-bake patterns into the generated hook files.
+  — **动态 `.readignore`（无需 re-install）**：钩子每次工具调用都通过
+    `readignore match` 重读 `cwd/.readignore`。编辑规则立即生效，与 `.gitignore`
+    一样改完即用。这是 v0.3 的核心价值：之前改 `.readignore` 后必须重跑 `install`
+    把模式重新冻结进生成的钩子文件。
+- **`curl | sh` one-liner installer** (`install.sh`): detects OS/arch, fetches
+  the matching binary + `checksums.txt` from the latest release, verifies the
+  SHA256, and installs `readignore` to `/usr/local/bin` (falling back to
+  `~/.local/bin`). Linux/macOS, no Go or npm required.
+  — **`curl | sh` 一键安装脚本**（`install.sh`）：检测 OS/架构，从最新 release
+    下载对应二进制 + `checksums.txt`，校验 SHA256 后安装到 `/usr/local/bin`
+    （回退到 `~/.local/bin`）。Linux/macOS，无需 Go 或 npm。
+- **Homebrew tap**: `brews` stanza enabled in `.goreleaser.yml`
+  (`0xByteBard404/homebrew-tap`). After the tap repo is created and the first
+  v0.3 release publishes: `brew tap 0xByteBard404/tap && brew install readignore`.
+  — **Homebrew tap**：`.goreleaser.yml` 启用 `brews` 段
+    （`0xByteBard404/homebrew-tap`）。tap 仓库创建、首个 v0.3 release 发布后：
+    `brew tap 0xByteBard404/tap && brew install readignore`。
+
+### Changed / 变更
+
+- **Hooks call `readignore match` — Python engine removed**: the Claude Code and
+  codex hooks (`.claude/hooks/readignore.sh`, `.codex/hooks/readignore.sh`) now
+  shell out to `readignore match <path>` instead of embedding a Python match
+  engine. Adapter output drops from **3 files (sh + py + json) → 2 files
+  (sh + json)**. If `readignore` is not on `PATH`, the hook falls back to
+  **allow** with a stderr warning (never breaks the agent). Net **-486 lines**.
+  — **钩子改调 `readignore match`——移除 Python 引擎**：Claude Code 与 codex 钩子
+    （`.claude/hooks/readignore.sh`、`.codex/hooks/readignore.sh`）改为 shell 调
+    `readignore match <path>`，不再内嵌 Python 匹配引擎。适配器产物从
+    **3 文件（sh + py + json）→ 2 文件（sh + json）**。若 `readignore` 不在
+    `PATH`，钩子回退**放行**并打 stderr 警告（绝不搞死 agent）。净减 **486 行**。
+- **pi TS matcher removed**: `.pi/extensions/readignore.ts` now calls
+  `readignore match` via `child_process.execFileSync` instead of a hand-written
+  gitignore matcher. Spawn failure falls back to **allow** + stderr warning.
+  The matcher is no longer frozen into the extension (different `.readignore`
+  contents produce identical output).
+  — **pi TS matcher 移除**：`.pi/extensions/readignore.ts` 改为通过
+    `child_process.execFileSync` 调 `readignore match`，不再用手写 gitignore
+    matcher。spawn 失败回退**放行** + stderr 警告。matcher 不再冻结进扩展
+    （不同 `.readignore` 内容产出完全一致）。
+
 ## [0.2.0] - 2026-07-09
 
 Three hard adapters — Claude Code, **codex CLI**, and **pi** — plus one config
@@ -120,6 +188,7 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.0
 [0.2.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.2.0
 [0.1.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.1.0
