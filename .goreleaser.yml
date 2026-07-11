@@ -106,7 +106,8 @@ brews:
     repository:
       owner: 0xByteBard404            # 需先手动创建 0xByteBard404/homebrew-tap 空仓库，否则首次 release 推 tap 失败
       name: homebrew-tap
-      # token 默认用 GITHUB_TOKEN (goreleaser 内置)；私有 tap 需 HOMEBREW_TAP_GITHUB_TOKEN。
+      # 跨仓库写 homebrew-tap 需 PAT（GITHUB_TOKEN 只写本仓库 readignore）。
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: https://github.com/0xByteBard404/readignore
     description: ".gitignore for AI coding agents — declare files your AI agent must not read."
