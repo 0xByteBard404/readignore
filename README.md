@@ -121,6 +121,10 @@ readignore install claude-code --force  # overwrite existing files
 
 # Validate .readignore syntax and report each adapter's install status
 readignore check
+
+# Check if a path is denied by .readignore (exit 0=allow, 1=deny)
+# This is what hooks call at runtime — you can use it directly for debugging
+readignore match .env
 ```
 
 If a target file already exists, `install` **skips it** (and tells you to merge

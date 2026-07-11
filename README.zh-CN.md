@@ -116,6 +116,10 @@ readignore install claude-code --force  # 覆盖已有文件
 
 # 校验 .readignore 语法并报告每个适配器的安装状态
 readignore check
+
+# 检查某路径是否被 .readignore 拦截（exit 0=放行, 1=拦截）
+# 这正是钩子在运行时调用的命令——你也可以直接用它调试
+readignore match .env
 ```
 
 如果目标文件已存在，`install` **会跳过**（并提示你手动合并），除非你传
