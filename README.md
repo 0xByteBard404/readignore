@@ -25,18 +25,10 @@ that agent actually supports.
 
 ## How it works
 
-```mermaid
-flowchart LR
-  RI[".readignore<br/>(gitignore syntax)"] --> CLI["readignore CLI<br/>parse + adapt"]
-  subgraph hard ["hard — blocks before execution 🔒"]
-    CC["Claude Code"]
-    CX["codex CLI"]
-    PI["pi"]
-  end
-  CLI --> CC & CX & PI
-  CLI --> OC["opencode<br/>permissions deny"]
-  CLI -.-> CU["Cursor<br/>roadmap 🗺"]
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.svg">
+  <img alt="How readignore works: .readignore → readignore CLI → per-agent defenses" src="docs/images/how-it-works-light.svg">
+</picture>
 
 You write one declarative `.readignore`. readignore translates it into the
 **strongest available mechanism** for each target agent — and **honestly labels
