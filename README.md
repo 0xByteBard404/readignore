@@ -48,8 +48,8 @@ Strength tiers are **honest**, not marketing:
 | Agent | Strength | Mechanism | Status |
 |---|---|---|---|
 | **Claude Code** | **hard** | `PreToolUse` hook — blocks the tool call **before** it runs (Read, Grep, Glob, Bash). Programmatic interception at runtime. | ✅ shipped |
-| **codex CLI** | **hard** | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash+python). Same runtime-deny mechanism as Claude Code; requires hook trust on first run. See [codex note](#codex-platform-note) below. | ✅ shipped |
-| **pi** | **hard** | `.pi/extensions/readignore.ts` TypeScript extension that **overrides** the built-in `read` tool — returns `Access denied` for matched paths before the file is read. Auto-loaded at startup. | ✅ shipped |
+| **codex CLI** | **hard** | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash, calls `readignore match`). Same runtime-deny mechanism as Claude Code; requires hook trust on first run. See [codex note](#codex-platform-note) below. | ✅ shipped |
+| **pi** | **hard** | `.pi/extensions/readignore.ts` TypeScript extension that **overrides** the built-in `read` tool — calls `readignore match` and returns `Access denied` for matched paths before the file is read. Auto-loaded at startup. | ✅ shipped |
 | **opencode** | **config** | `permission.read` deny/allow globs in `opencode.json`; enforced when opencode loads config. | ✅ shipped |
 | **Cursor** | soft | `.cursor/rules` natural-language advisory (model may comply). | 🗺 roadmap |
 | **kilo code** | — | mechanism TBD. | 🗺 roadmap |
@@ -166,17 +166,22 @@ Supported: `*`, `**`, `?`, `[abc]` character classes, `!` negation
 
 ### Claude Code (`readignore install claude-code`)
 
-Three files under `.claude/`:
+Two files under `.claude/`:
 
 ```
-.claude/hooks/readignore.sh   (0755)  # extracts target path from tool_input JSON
-.claude/hooks/readignore.py   (0644)  # gitignore match engine (stdlib only)
+.claude/hooks/readignore.sh   (0755)  # extracts target path, calls `readignore match`
 .claude/settings.json                 # registers the hook on PreToolUse
 ```
 
-The hook fires on `Read | Grep | Glob | Bash` and **denies before execution**
-when the target path matches `.readignore`. Claude Code's settings watcher picks
-up the change live — **no restart needed**.
+The hook fires on `Read | Grep | Glob | Bash`, calls `readignore match <path>`
+(the **go-git authority** for gitignore matching), and **denies before
+execution** when the path is matched (`exit 1` = deny). Claude Code's settings
+watcher picks up the change live — **no restart needed**.
+
+**Editing `.readignore` takes effect immediately** — the hook re-reads
+`cwd/.readignore` on every call via `readignore match`, so you never need to
+re-run `install` after editing rules. Same edit-and-go experience as
+`.gitignore`.
 
 ### opencode (`readignore install opencode`)
 
@@ -207,17 +212,18 @@ opencode reads this at startup.
 
 ### codex CLI (`readignore install codex`)
 
-Three files under `.codex/`, mirroring the Claude Code layout:
+Two files under `.codex/`, mirroring the Claude Code layout:
 
 ```
-.codex/hooks/readignore.sh   (0755)  # extracts target path from tool_input JSON
-.codex/hooks/readignore.py   (0644)  # gitignore match engine (stdlib only)
+.codex/hooks/readignore.sh   (0755)  # extracts target path, calls `readignore match`
 .codex/hooks.json                    # registers the hook (Claude-style PreToolUse)
 ```
 
 codex's hook protocol is [Claude-style](https://github.com/openai/codex)
-(`PreToolUse` + `permissionDecision: "deny"`), so the same bash+python match
-engine runs and denies before the tool executes.
+(`PreToolUse` + `permissionDecision: "deny"`), so the same bash hook runs — it
+calls `readignore match` (go-git authority) and denies before the tool
+executes. Like Claude Code, **editing `.readignore` takes effect immediately**
+(no re-install needed).
 
 > **Hook trust:** codex gates project-level hooks behind a trust prompt. The
 > first time a project hook runs you'll be asked to confirm trust; pass
@@ -235,7 +241,7 @@ that `command` string.
 The `matcher: "Read|Grep|Glob|Bash"` in `hooks.json` is deliberate, not a bug:
 
 - it keeps the codex adapter **symmetric** with the Claude Code adapter (same
-  shared bash+python hook engine);
+  shared bash hook, both calling `readignore match`);
 - it covers users who install **MCP tools** exposing `Read`/`Grep`/`Glob` into
   codex — those MCP tools would also be intercepted.
 
@@ -252,10 +258,11 @@ A single TypeScript extension:
 
 pi [auto-loads `.pi/extensions/*.ts`](https://github.com/earendil-works/pi-coding-agent)
 at startup. The extension registers a tool named `read` — the same name as pi's
-built-in — which **overrides** it: matched paths return `Access denied` before
-the file is ever read; everything else delegates to a normal read. The matcher
-is hand-written gitignore (zero npm deps). No pi types are imported, so the file
-type-checks in isolation.
+built-in — which **overrides** it: it calls `readignore match <path>` (go-git
+authority) and matched paths return `Access denied` before the file is ever
+read; everything else delegates to a normal read. No pi types are imported, so
+the file type-checks in isolation. As with the hook adapters, **editing
+`.readignore` takes effect immediately**.
 
 ---
 
@@ -291,7 +298,17 @@ from the latest release, verifies the SHA256, and installs `readignore` to
 `/usr/local/bin` (falling back to `~/.local/bin`, with a PATH hint if needed).
 Windows users: use npm, Scoop, or the `.zip` from Releases.
 
-**Coming soon (v0.3+):** Homebrew, Scoop.
+**Homebrew:**
+
+```bash
+brew tap 0xByteBard404/tap
+brew install readignore
+```
+
+(Requires the `0xByteBard404/homebrew-tap` repo — available once the first v0.3
+release publishes.)
+
+**Coming soon:** Scoop (Windows).
 
 ---
 
@@ -310,9 +327,11 @@ enforcement point.
 
 ## Project status
 
-v0.2.0 — three **hard** adapters (Claude Code, codex CLI, pi) + one **config**
-adapter (opencode). Parser, adapter registry, and CLI are stable. Cursor and
-kilo code adapters are on the roadmap.
+v0.3.0 — three **hard** adapters (Claude Code, codex CLI, pi) + one **config**
+adapter (opencode). All hooks now call `readignore match` (go-git authority),
+so **editing `.readignore` takes effect immediately** — no re-install needed.
+Install via npm, `curl | sh`, or Homebrew. Cursor and kilo code adapters are
+on the roadmap.
 
 See [CHANGELOG.md](./CHANGELOG.md) for the version history.
 

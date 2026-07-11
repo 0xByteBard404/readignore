@@ -69,7 +69,7 @@ readignore adapts `.readignore` into each agent's strongest *real* mechanism. St
 | Agent | Strength | Mechanism | Status |
 |---|---|---|---|
 | **Claude Code** | hard | `PreToolUse` hook — blocks the tool call **before** it runs (Read, Grep, Glob, Bash). | ✅ shipped |
-| **codex CLI** | hard | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash+python). | ✅ shipped |
+| **codex CLI** | hard | `.codex/hooks.json` Claude-style `PreToolUse` hook (bash, calls `readignore match`). | ✅ shipped |
 | **pi** | hard | `.pi/extensions/readignore.ts` TS extension that **overrides** the built-in `read` tool. | ✅ shipped |
 | **opencode** | config | `permission.read` deny/allow globs in `opencode.json`. | ✅ shipped |
 | **Cursor** | soft | `.cursor/rules` natural-language advisory (model may comply). | 🗺 roadmap |
