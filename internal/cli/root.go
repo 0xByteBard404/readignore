@@ -100,6 +100,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newInstallCmd())
 	root.AddCommand(newCheckCmd())
+	root.AddCommand(newMatchCmd())
 
 	return root
 }
