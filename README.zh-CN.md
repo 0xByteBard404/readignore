@@ -266,7 +266,17 @@ go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 
 **二进制下载：** 从 [Releases](https://github.com/0xByteBard404/readignore/releases) 下载你平台的压缩包，解压后把 `readignore` 放到 PATH。
 
-**即将推出（v0.3+）：** Homebrew、Scoop、`curl | sh`。
+**`curl | sh` 一键脚本（Linux / macOS，无需 Go 或 npm）：**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xByteBard404/readignore/main/install.sh | sh
+```
+
+脚本会自动检测 OS/架构，从最新 release 下载对应二进制 + `checksums.txt`，
+校验 SHA256 后安装到 `/usr/local/bin`（无写权限时回退到 `~/.local/bin` 并提示加 PATH）。
+Windows 用户请用 npm、Scoop 或从 Releases 下载 `.zip`。
+
+**即将推出（v0.3+）：** Homebrew、Scoop。
 
 ---
 

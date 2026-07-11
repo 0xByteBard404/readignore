@@ -280,7 +280,18 @@ go install github.com/0xByteBard404/readignore/cmd/readignore@latest
 [Releases](https://github.com/0xByteBard404/readignore/releases), extract, and
 put `readignore` on your PATH.
 
-**Coming soon (v0.3+):** Homebrew, Scoop, `curl | sh`.
+**`curl | sh` one-liner (Linux / macOS, no Go or npm needed):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/0xByteBard404/readignore/main/install.sh | sh
+```
+
+The script detects your OS/arch, fetches the matching binary + `checksums.txt`
+from the latest release, verifies the SHA256, and installs `readignore` to
+`/usr/local/bin` (falling back to `~/.local/bin`, with a PATH hint if needed).
+Windows users: use npm, Scoop, or the `.zip` from Releases.
+
+**Coming soon (v0.3+):** Homebrew, Scoop.
 
 ---
 
