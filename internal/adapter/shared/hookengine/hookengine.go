@@ -11,10 +11,6 @@
 // codex 的 ~/.codex/hooks.json）仍留在各自适配器包。
 package hookengine
 
-// denyJSON 是 PreToolUse deny 决策的固定输出（与 cli.hookCheckDenyJSON 一致）。
-// 保留作为契约文档；当前 sh 直接转发 hook-check 的 stdout，不自己 printf。
-const denyJSON = `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"readignore: path declared in .readignore"}}` + "\n"
-
 // shScript 是 readignore.sh 全文（Claude-style PreToolUse hook 的 shell 脚本）。
 //
 // v0.3.3 起简化为：检测 readignore 在 PATH → 调 `readignore hook-check`。

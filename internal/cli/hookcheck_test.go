@@ -25,6 +25,7 @@ func TestRunHookCheck(t *testing.T) {
 		{"Read .env.example (取反放行)", `{"tool_name":"Read","tool_input":{"file_path":".env.example"}}`, false},
 		{"Read main.go (无规则)", `{"tool_name":"Read","tool_input":{"file_path":"main.go"}}`, false},
 		{"Read sub/id_rsa (** 任意层级)", `{"tool_name":"Read","tool_input":{"file_path":"sub/id_rsa"}}`, true},
+		{"Read sub\\id_rsa (Windows 反斜杠)", `{"tool_name":"Read","tool_input":{"file_path":"sub\\id_rsa"}}`, true},
 
 		// Bash command —— 字面路径
 		{"Bash cat .env", `{"tool_name":"Bash","tool_input":{"command":"cat .env"}}`, true},
