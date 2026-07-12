@@ -22,8 +22,8 @@ func TestGenerate_ClaudeCode(t *testing.T) {
 	assert.NotContains(t, out, "readignore.py", "v0.3 must not generate readignore.py")
 	// sh 内容标记可执行（mode 0755 在头里）。
 	assert.Contains(t, out, "mode 755")
-	// v0.3：sh 调 readignore match（go-git 权威），不内嵌 patterns。
-	assert.Contains(t, out, "readignore match")
+	// v0.3.3：sh 转发到 readignore hook-check（JSON 解析+匹配在 Go）。
+	assert.Contains(t, out, "readignore hook-check")
 }
 
 // generate opencode：stdout 含 permission.read 的 deny 配置。

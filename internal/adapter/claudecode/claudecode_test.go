@@ -291,10 +291,9 @@ func TestGenerate_FileArtifacts_Static(t *testing.T) {
 		f, ok := byPath[".claude/hooks/readignore.sh"]
 		require.True(t, ok)
 		assert.Equal(t, uint32(0o755), f.Mode, "hook must be executable")
-		// v0.3：sh 调 readignore match（go-git 权威），不再调 readignore.py。
-		assert.Contains(t, f.Content, "readignore match")
+		// v0.3.3：sh 转发到 readignore hook-check（JSON 解析+匹配在 Go）。
+		assert.Contains(t, f.Content, "readignore hook-check")
 		assert.NotContains(t, f.Content, "readignore.py", "sh must not reference dropped py engine")
-		assert.Contains(t, f.Content, "permissionDecision")
 		// readignore 不在 PATH 的 fallback。
 		assert.Contains(t, f.Content, "command -v readignore")
 	})

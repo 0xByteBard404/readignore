@@ -12,34 +12,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestBuildShScript_Structure 验证 sh 脚本骨架：调 readignore match + 输出 PreToolUse
-// deny 结构（permissionDecision）+ readignore 不在 PATH 的 fallback。
-// 这是 claudecode + codex 共用 PreToolUse 协议的最低契约。
+// TestBuildShScript_Structure 验证 sh 脚本骨架：转发到 readignore hook-check
+// + readignore 不在 PATH 的 fallback。这是 claudecode + codex 共用 PreToolUse
+// 协议的最低契约。
+//
+// v0.3.3 起 sh 不再做 JSON 抽取/匹配（收敛到 Go 的 hook-check），故不再断言
+// file_path/deny 等字面——那些由 hook-check 输出，sh 只转发。
 func TestBuildShScript_Structure(t *testing.T) {
 	got := BuildShScript()
 	require.NotEmpty(t, got, "BuildShScript must return non-empty script")
 
-	// 必须调 readignore match（go-git 权威 matcher，v0.3 核心改造）。
-	assert.Contains(t, got, "readignore match", "sh must invoke `readignore match`")
+	// v0.3.3：sh 转发到 readignore hook-check（Go 子命令，JSON 解析与匹配在 Go）。
+	assert.Contains(t, got, "readignore hook-check", "sh must invoke `readignore hook-check`")
 
-	// 不应再引用 v0.2 的 py 引擎（已废弃）。
+	// 不应再引用 v0.2 py 引擎或旧 bash grep 抽取（已废弃/迁移到 hook-check）。
 	assert.NotContains(t, got, "readignore.py", "sh must not reference deprecated readignore.py")
 	assert.NotContains(t, got, "python3", "sh must not probe python (py engine dropped)")
-	assert.NotContains(t, got, "PATTERNS", "sh must not embed patterns (runtime read via match)")
-
-	// 必须含 PreToolUse deny 结构（permissionDecision），这是 Claude-style 协议的拦截信号。
-	assert.Contains(t, got, "permissionDecision", "sh must emit permissionDecision deny JSON")
-	assert.Contains(t, got, `"deny"`, "sh must contain deny literal")
+	assert.NotContains(t, got, "PATTERNS", "sh must not embed patterns")
+	assert.NotContains(t, got, "extract_field", "sh must not do bash grep extraction (moved to hook-check)")
 
 	// readignore 不在 PATH 的 fallback：放行 + stderr 警告（不搞死）。
 	assert.Contains(t, got, "command -v readignore")
 	assert.Contains(t, got, "hook disabled", "sh must warn when readignore missing from PATH")
-
-	// 覆盖 Read|Grep|Glob|Bash 四个工具的字段抽取。
-	assert.Contains(t, got, "file_path")
-	assert.Contains(t, got, "path")
-	assert.Contains(t, got, "pattern")
-	assert.Contains(t, got, "command")
 }
 
 // TestBuildShScript_Idempotent 多次调用返回同一份常量脚本（无参数、无随机）。

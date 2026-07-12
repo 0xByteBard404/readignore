@@ -109,10 +109,9 @@ func TestGenerate_ProducesCodexHookFiles(t *testing.T) {
 		f, ok := byPath[".codex/hooks/readignore.sh"]
 		require.True(t, ok, "must produce .codex/hooks/readignore.sh")
 		assert.Equal(t, uint32(0o755), f.Mode, "hook must be executable")
-		// v0.3：sh 调 readignore match（go-git 权威），不再调 readignore.py。
-		assert.Contains(t, f.Content, "readignore match")
+		// v0.3.3：sh 转发到 readignore hook-check（JSON 解析+匹配在 Go）。
+		assert.Contains(t, f.Content, "readignore hook-check")
 		assert.NotContains(t, f.Content, "readignore.py", "sh must not reference dropped py engine")
-		assert.Contains(t, f.Content, "permissionDecision")
 	})
 
 	// v0.3：不再生成 readignore.py（py 引擎废弃）。

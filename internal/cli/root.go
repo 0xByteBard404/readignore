@@ -102,6 +102,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newInstallCmd())
 	root.AddCommand(newUpdateCmd())
+	root.AddCommand(newHookCheckCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newMatchCmd())
 	root.AddCommand(newUninstallCmd())

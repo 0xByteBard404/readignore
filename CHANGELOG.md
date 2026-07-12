@@ -10,6 +10,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-07-12
+
+Hook moved to Go: the Claude Code/codex hook now forwards to a new
+`readignore hook-check` subcommand. JSON parsing and matching are done in Go
+(`encoding/json`), fixing the multi-line-command / escaped-quote bypass of the
+old bash `grep` extraction.
+
+钩子迁移到 Go：Claude Code/codex 钩子转发到新增的 `readignore hook-check` 子命令。
+JSON 解析与匹配全在 Go（encoding/json），修复旧 bash grep 抽取的多行命令 / 转义引号绕过。
+
+### Fixed / 修复
+
+- **Hook bypass via multi-line Bash commands** (`hookengine` + new `cli/hook-check`):
+  the old bash hook extracted the `command` field with `grep -oE` (line mode), so
+  multi-line commands escaped extraction entirely — `echo x\ncat .env` was not
+  blocked. The hook now forwards to `readignore hook-check` (Go), which parses
+  tool_input with `encoding/json` (multi-line, escaped quotes, all JSON edges) and
+  pre-normalizes real newlines to spaces. Also covers `\"` truncation and `~` paths.
+  — **多行 Bash 命令绕过钩子**（`hookengine` + 新 `cli/hook-check`）：旧 bash 钩子用
+    `grep -oE`（行模式）抽 `command`，多行命令整个逃过抽取——`echo x\ncat .env` 拦不住。
+    现在转发到 `readignore hook-check`（Go），用 `encoding/json` 解析（多行、转义引号、
+    所有 JSON 边界）并预处理换行→空格。同时覆盖 `\"` 截断与 `~` 路径。
+
+### Security / 安全说明
+
+Bash 拦截现覆盖所有**字面路径**（多行/转义/`~`/扩展名/dotfile）。变量展开（`cat $F`）
+与间接路径（`ln -s .env x; cat x`）仍是静态分析固有天花板——Read/Grep/Glob 工具仍
+100% 硬拦截（路径直接、精确）。
+
 ## [0.3.2] - 2026-07-12
 
 `readignore update` now defaults to `--all` when called with no arguments — one
@@ -249,7 +278,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.3
 [0.3.2]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.2
 [0.3.1]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.1
 [0.3.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.0
