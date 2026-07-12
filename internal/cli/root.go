@@ -7,6 +7,7 @@
 //   - readignore generate <id>     解析 .readignore 并打印适配器产物（dry-run）；
 //   - readignore install <id>      把适配器产物写到磁盘；
 //   - readignore check             校验 .readignore 语法并报告各适配器安装状态。
+//   - readignore uninstall <id>    移除适配器产物（install 的逆操作）。
 //
 // 适配器（claudecode / opencode / ……）通过自身 init() 自登记进 adapter registry，
 // 本包用 blank import 触发这些 init()，使 adapter.All() 能发现全部适配器：
@@ -101,6 +102,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newInstallCmd())
 	root.AddCommand(newCheckCmd())
 	root.AddCommand(newMatchCmd())
+	root.AddCommand(newUninstallCmd())
 
 	return root
 }
