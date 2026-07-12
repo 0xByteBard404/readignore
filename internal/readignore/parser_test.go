@@ -106,3 +106,64 @@ func TestMatches_DirectoryTrailingSlash(t *testing.T) {
 	assert.True(t, p.Matches("build/foo"))
 	assert.True(t, p.Matches("build/sub/"))
 }
+
+// TestMatches_GlobWildcards 覆盖 gitignore 通配符语义：? 单字符、[abc] 字符类、
+// [!abc] 取反字符类、* 任意。这些是 .readignore 规则匹配的地基，之前完全没测。
+func TestMatches_GlobWildcards(t *testing.T) {
+	// ? 单字符通配
+	p, err := Parse("secr?t\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches("secret"))  // ? = e
+	assert.False(t, p.Matches("secrt"))  // ? 要求恰好一个字符
+	assert.False(t, p.Matches("secreet")) // ? 只要一个
+
+	// [ab] 字符类
+	p, err = Parse(".[ab]nv\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches(".anv"))
+	assert.True(t, p.Matches(".bnv"))
+	assert.False(t, p.Matches(".cnv")) // c 不在 [ab]
+
+	// [!ab] —— 钉住 go-git 实际行为：它把 [!ab] 当字面字符类（匹配 ! a b），
+	// 不实现 Fnmatch 风格的 [!...] 取反语义。要"匹配非 a/b"得用多条 ! 取反规则。
+	// 钉住这个行为，防未来误以为 [!ab] 能取反。
+	p, err = Parse(".[!ab]nv\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches(".!nv"))  // ! 在字面字符类 [!ab] 里
+	assert.True(t, p.Matches(".anv"))  // a 在 [!ab] 里
+	assert.False(t, p.Matches(".cnv")) // c 不在 [!ab]
+
+	// * 任意字符序列
+	p, err = Parse("*.pem\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches("a.pem"))
+	assert.True(t, p.Matches("secret.pem"))
+	assert.False(t, p.Matches("a.key"))
+}
+
+// TestMatches_NegationChain 钉住「最后匹配规则胜出」的取反链语义。
+// .env deny → !.env.prod 放行 → .env.prod.bak 重新 deny。
+func TestMatches_NegationChain(t *testing.T) {
+	p, err := Parse(".env\n!.env.prod\n.env.prod.bak\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches(".env"))          // 第一条 .env 命中 → deny
+	assert.False(t, p.Matches(".env.prod"))    // !.env.prod 取反覆盖 → 放行
+	assert.True(t, p.Matches(".env.prod.bak")) // 第三条命中 → deny
+	assert.False(t, p.Matches(".env.local"))   // 不匹配任何字面规则 → 放行
+}
+
+// TestParse_EdgeInputs 覆盖解析层的边界输入：CRLF 行尾（Windows）、大小写敏感性。
+func TestParse_EdgeInputs(t *testing.T) {
+	// CRLF 行尾（Windows checkout）：parser 的 TrimRight("\r\n") 应清理 \r，
+	// 规则正常生效，不能因为 \r 把 *.pem 变成 *.pem\r 而失配。
+	p, err := Parse("*.pem\r\n.env\r\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches("secret.pem"), "CRLF 不应破坏 *.pem 匹配")
+	assert.True(t, p.Matches(".env"), "CRLF 不应破坏 .env 匹配")
+
+	// 大小写敏感（gitignore 默认）：.env ≠ .ENV
+	p, err = Parse(".env\n")
+	assert.NoError(t, err)
+	assert.True(t, p.Matches(".env"))
+	assert.False(t, p.Matches(".ENV"), ".ENV 不应命中 .env（大小写敏感）")
+}

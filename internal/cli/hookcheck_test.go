@@ -46,6 +46,30 @@ func TestRunHookCheck(t *testing.T) {
 		// Grep path 字段
 		{"Grep path .env", `{"tool_name":"Grep","tool_input":{"path":".env"}}`, true},
 		{"Grep path main.go (放行)", `{"tool_name":"Grep","tool_input":{"path":"main.go"}}`, false},
+
+		// === bad case 扩充：路径变体 / 不同读法 / 多敏感 token ===
+		// DENY：路径变体（绕过尝试 —— 前缀、嵌套、glob 后缀、深层 **）
+		{"Bash cat ./.env (./ 前缀)", `{"tool_name":"Bash","tool_input":{"command":"cat ./.env"}}`, true},
+		{"Bash cat .env.production (.env.*)", `{"tool_name":"Bash","tool_input":{"command":"cat .env.production"}}`, true},
+		{"Bash cat secrets/.env (嵌套)", `{"tool_name":"Bash","tool_input":{"command":"cat secrets/.env"}}`, true},
+		{"Bash cat sub/dir/id_rsa (深层 **)", `{"tool_name":"Bash","tool_input":{"command":"cat sub/dir/id_rsa"}}`, true},
+		// DENY：不同读法（不止 cat —— head/cp/tar 等都该拦 .env token）
+		{"Bash head .env", `{"tool_name":"Bash","tool_input":{"command":"head .env"}}`, true},
+		{"Bash cp .env /tmp/x (复制)", `{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`, true},
+		{"Bash tar czf x.tgz .env (打包)", `{"tool_name":"Bash","tool_input":{"command":"tar czf x.tgz .env"}}`, true},
+		{"Bash cat .env secret.pem (多敏感 token)", `{"tool_name":"Bash","tool_input":{"command":"cat .env secret.pem"}}`, true},
+
+		// ALLOW：防误报（命令名 / 选项 / 无规则路径 / 管道 / 赋值）
+		{"Bash git status (命令名)", `{"tool_name":"Bash","tool_input":{"command":"git status"}}`, false},
+		{"Bash npm install (命令名)", `{"tool_name":"Bash","tool_input":{"command":"npm install"}}`, false},
+		{"Bash go build ./... (选项+路径)", `{"tool_name":"Bash","tool_input":{"command":"go build ./..."}}`, false},
+		{"Bash cat main.go (无规则路径)", `{"tool_name":"Bash","tool_input":{"command":"cat main.go"}}`, false},
+		{"Bash ls | grep foo (管道)", `{"tool_name":"Bash","tool_input":{"command":"ls | grep foo"}}`, false},
+		{"Bash export FOO=bar (赋值)", `{"tool_name":"Bash","tool_input":{"command":"export FOO=bar"}}`, false},
+
+		// 固有 limitation（静态分析天花板，钉住「已知不拦」——防未来误以为该拦而改坏）
+		{"Bash cat $SECRET (变量展开, 固有不拦)", `{"tool_name":"Bash","tool_input":{"command":"cat $SECRET"}}`, false},
+		{"Bash cat linked (间接路径, 固有不拦)", `{"tool_name":"Bash","tool_input":{"command":"cat linked"}}`, false},
 	}
 
 	for _, c := range cases {
