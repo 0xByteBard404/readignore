@@ -26,3 +26,10 @@ npm/bin/
 npm/**/_extract/
 npm/**/*.tmp
 npm/node_modules/
+
+# 本地草稿，不入库）
+.data/
+
+# 工具产物（不入库）
+.claude/
+.playwright-mcp/

@@ -1,0 +1,48 @@
+# readignore —— AI coding agent 防护规则（gitignore 语法）
+# 列在此处的文件/目录将被适配器翻译成各 AI agent（Claude Code、opencode 等）
+# 的防护配置，阻止 agent 读取或泄露这些敏感路径。
+#
+# 语法与 .gitignore 一致：# 注释；! 取反（放行）；** 跨任意层级；尾 / 锚定目录。
+
+# --- 环境变量 / 密钥文件 ---
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# --- SSH / 云凭据 ---
+**/id_rsa
+**/id_rsa.*
+**/id_ed25519
+**/id_ed25519.*
+.aws/
+.gcp/
+.azure/
+
+# --- 通用敏感目录与文件 ---
+secrets/
+**/secrets/
+*.keystore
+credentials.json
+service-account*.json
+
+# --- 私有配置 / 令牌 ---
+.npmrc
+.pypirc
+.netrc
+*.token
+
+# --- IDE / 系统杂物（非敏感但通常不应进 agent 上下文） ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- 示例：取反放行（脱敏的示例文件允许 agent 读取） ---
+!.env.example
+# !credentials.example.json
+
+
+install.sh
