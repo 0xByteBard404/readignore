@@ -9,6 +9,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/0xByteBard404/readignore/blob/main/LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
+> **TL;DR** — `npm i -g readignore && readignore init && readignore install --all`
+
 AI coding agents (Claude Code, Cursor, Codex, opencode, kilo code, …) can read
 any file in your repo at runtime — **including secrets** like `.env`, `*.pem`,
 `id_rsa`, `credentials.json`. Existing defenses have gaps:
@@ -76,8 +78,8 @@ each agent can actually enforce.
 ## Quickstart
 
 ```bash
-# 1. Install
-go install github.com/0xByteBard404/readignore/cmd/readignore@latest
+# 1. Install (npm — no Go needed; other options in Installation below)
+npm i -g readignore
 
 # 2. In your repo:
 cd your-repo
