@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="readignore — .gitignore for AI coding agents">
+  <title>readignore — .gitignore for AI coding agents</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0E1B18"/>
+      <stop offset="1" stop-color="#070D0C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.20" cy="0.44" r="0.55">
+      <stop offset="0" stop-color="#0D9488" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#0D9488" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="34"/>
+    </filter>
+  </defs>
+  <rect width="1280" height="640" fill="url(#bg)"/>
+  <rect width="1280" height="640" fill="url(#glow)"/>
+  <circle cx="262" cy="300" r="250" fill="#14B8A6" opacity="0.20" filter="url(#blur)"/>
+  <g transform="translate(150,180) scale(3.4375)" stroke-linejoin="round" stroke-linecap="round"><path d="M6 32 Q32 9 58 32 Q32 55 6 32 Z" fill="none" stroke="#2DD4BF" stroke-width="6.5"/><path d="M32 21 L43 32 L32 43 L21 32 Z" fill="#2DD4BF"/><line x1="11" y1="53" x2="53" y2="11" stroke="#FF7849" stroke-width="7.5"/></g>
+  <text x="406" y="300" font-family="Inter, 'Noto Sans', 'Segoe UI', system-ui, sans-serif" font-size="106" font-weight="700" fill="#F1F5F9" letter-spacing="-3">readignore</text>
+  <text x="410" y="356" font-family="Inter, 'Noto Sans', 'Segoe UI', system-ui, sans-serif" font-size="34" font-weight="400" fill="#8FB3AC">.gitignore for AI coding agents</text>
+  <g transform="translate(150,470)">
+    <rect width="419" height="68" rx="16" fill="#11201D" stroke="#1F3A34" stroke-width="1.5"/>
+    <text x="26" y="45" font-family="'DejaVu Sans Mono', ui-monospace, monospace" font-size="29" fill="#2DD4BF">$ npm i -g readignore</text>
+  </g>
+  <text x="1130" y="596" text-anchor="end" font-family="Inter, 'Noto Sans', system-ui, sans-serif" font-size="24" fill="#5E7F78">MIT · open source</text>
+</svg>

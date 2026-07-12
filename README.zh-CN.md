@@ -1,5 +1,10 @@
 # readignore
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo/readignore-hero-dark.svg">
+  <img src="docs/images/logo/readignore-hero-light.svg" alt="readignore" height="72">
+</picture>
+
 [English](README.md) | **中文**
 
 **AI 编程智能体的 `.gitignore` —— 声明你的 AI 智能体禁止读取的文件。**

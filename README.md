@@ -1,5 +1,10 @@
 # readignore
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/logo/readignore-hero-dark.svg">
+  <img src="docs/images/logo/readignore-hero-light.svg" alt="readignore" height="72">
+</picture>
+
 **English** | [中文](README.zh-CN.md)
 
 **`.gitignore` for AI coding agents — declare files your AI agent must not read.**

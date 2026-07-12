@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 104" role="img" aria-label="readignore">
+  <title>readignore</title>
+  <g transform="translate(4,20)"><path d="M6 32 Q32 9 58 32 Q32 55 6 32 Z" fill="none" stroke="#0D9488" stroke-width="6.5" stroke-linejoin="round"/><path d="M32 21 L43 32 L32 43 L21 32 Z" fill="#0D9488"/><line x1="11" y1="53" x2="53" y2="11" stroke="#F4511E" stroke-width="7.5" stroke-linecap="round"/></g>
+  <text x="86" y="70" font-family="Inter, 'Noto Sans', 'Segoe UI', system-ui, -apple-system, sans-serif" font-size="50" font-weight="700" fill="#0F172A" letter-spacing="-1.6">readignore</text>
+</svg>
