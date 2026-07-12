@@ -10,6 +10,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-12
+
+`readignore update` now defaults to `--all` when called with no arguments — one
+command refreshes every detected adapter.
+
+`readignore update` 无参时默认 `--all`，一条命令刷新所有检测到的适配器。
+
+### Changed / 变更
+
+- **`update` defaults to `--all` with no args** (`internal/cli`): `readignore update`
+  with no arguments now refreshes all detected adapters (previously errored asking
+  for an ID or `--all`). `install` is unchanged — it still requires an explicit
+  target, since installing is a write that should name its subject.
+  — **`update` 无参默认 `--all`**（`internal/cli`）：`readignore update` 无参时刷新
+    所有检测到的适配器（原先报错要 ID 或 `--all`）。`install` 不变——install 是写入
+    操作，仍需明确目标。
+
 ## [0.3.1] - 2026-07-12
 
 Quick fix release: a new `uninstall` command (install's inverse) and a fix for
@@ -232,7 +249,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.2
 [0.3.1]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.1
 [0.3.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.0
 [0.2.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.2.0

@@ -123,8 +123,8 @@ readignore install --all                # all adapters detected here
 readignore install claude-code --force  # overwrite existing files
 
 # Refresh an adapter's files to the current readignore version (= install --force)
+readignore update                       # all adapters detected (default = --all)
 readignore update claude-code           # one adapter
-readignore update --all                 # all adapters detected here
 
 # Remove an adapter's generated files (inverse of install)
 readignore uninstall claude-code            # one adapter

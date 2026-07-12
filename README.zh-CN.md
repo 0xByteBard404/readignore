@@ -118,8 +118,8 @@ readignore install --all                # 本仓库检测到的全部适配器
 readignore install claude-code --force  # 覆盖已有文件
 
 # 刷新某个适配器产物到当前 readignore 版本（= install --force）
+readignore update                       # 全部检测到的适配器（默认 = --all）
 readignore update claude-code           # 单个适配器
-readignore update --all                 # 本仓库检测到的全部适配器
 
 # 移除某个适配器的产物（install 的逆操作）
 readignore uninstall claude-code            # 单个适配器

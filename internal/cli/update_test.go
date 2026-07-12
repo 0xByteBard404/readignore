@@ -40,3 +40,16 @@ func TestUpdate_All(t *testing.T) {
 	require.NoError(t, errR)
 	assert.Contains(t, string(got), "permission")
 }
+
+// update 无参默认 --all（刷新所有检测到的）。
+func TestUpdate_DefaultAll(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, ".", ".readignore", ".env\n")
+	writeFile(t, ".", "opencode.json", `{"existing": true}`) // 触发 Detect(opencode)
+
+	_, err := runCmd(t, []string{"update"}) // 无参 → 默认 --all
+	require.NoError(t, err)
+	got, errR := os.ReadFile(filepath.Join(dir, "opencode.json"))
+	require.NoError(t, errR)
+	assert.Contains(t, string(got), "permission")
+}
