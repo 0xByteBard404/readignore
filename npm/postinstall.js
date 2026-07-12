@@ -33,8 +33,8 @@ const REPO = 'readignore';
 // VERSION = 下载哪个 Go Release 的 binary（Go binary 版本）。
 // 注意：与 package.json 的壳包 version 解耦——壳包 bump（如 0.2.1 修复）
 // 不要求 Go 重发对应 Release；只有 Go binary 本身变更时才 bump 这里并打新 Release。
-// 当前 Go binary 是 v0.3.0（已 publish），壳包 0.3.0 下载 v0.3.0 binary。
-const VERSION = '0.3.0';
+// 当前 Go binary 是 v0.3.1（已 publish），壳包 0.3.1 下载 v0.3.1 binary。
+const VERSION = '0.3.1';
 const TAG = `v${VERSION}`;
 const RELEASE_BASE = `https://github.com/${OWNER}/${REPO}/releases/download/${TAG}`;
 const CHECKSUMS_URL = `${RELEASE_BASE}/checksums.txt`;

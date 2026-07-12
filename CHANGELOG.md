@@ -10,6 +10,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-07-12
+
+Quick fix release: a new `uninstall` command (install's inverse) and a fix for
+the Claude Code/codex hook falsely blocking legitimate Bash commands.
+
+快速修复版：新增 `uninstall` 命令（install 的逆操作），并修复 Claude Code/codex
+钩子误拦合法 Bash 命令的问题。
+
+### Added / 新增
+
+- **`readignore uninstall` subcommand** (`internal/cli`): removes an adapter's
+  generated files (`readignore uninstall <id|--all>`), the inverse of `install`.
+  Supports `--dry-run` to preview. Reuses `Generate` for the file list (no
+  manifest needed). Leaves `.readignore` intact. Closes the
+  install-without-uninstall asymmetry surfaced during dogfooding.
+  — **`readignore uninstall` 子命令**（`internal/cli`）：移除适配器生成的文件
+    （`readignore uninstall <id|--all>`），即 install 的逆操作。支持 `--dry-run`
+    预览。复用 `Generate` 取产物清单（无需 manifest）。不删 `.readignore`。补上
+    dogfood 时发现的「能 install 不能 uninstall」不对称缺口。
+
+### Fixed / 修复
+
+- **Hook no longer false-positives on Bash commands** (`internal/adapter/shared/hookengine`):
+  the Claude Code/codex hook used to split the Bash command into tokens and
+  `readignore match` every one, which blocked legit commands like
+  `git config --global user.email x@y` when a token happened to match a
+  `.readignore` rule. A `looks_like_path` guard now skips command names, flags,
+  and values — only path-like tokens (bearing `/`, bearing `.`, or present on
+  disk) are matched.
+  — **钩子不再对 Bash 命令误报**（`internal/adapter/shared/hookengine`）：Claude
+    Code/codex 钩子原先把 Bash 命令切成 token 逐个 match，导致
+    `git config --global user.email x@y` 这类合法命令因某 token 撞上 `.readignore`
+    规则被误拦。现加 `looks_like_path` 守卫——跳过命令名/选项/值，只对路径式 token
+    （含 `/`、含 `.`、或磁盘存在的）做匹配。
+
 ## [0.3.0] - 2026-07-11
 
 The match authority is unified: every hook now calls `readignore match` (go-git
@@ -188,7 +223,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.1
 [0.3.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.0
 [0.2.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.2.0
 [0.1.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.1.0

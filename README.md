@@ -117,6 +117,11 @@ readignore install claude-code          # one adapter
 readignore install --all                # all adapters detected here
 readignore install claude-code --force  # overwrite existing files
 
+# Remove an adapter's generated files (inverse of install)
+readignore uninstall claude-code            # one adapter
+readignore uninstall --all                  # all adapters detected here
+readignore uninstall claude-code --dry-run  # preview only, don't delete
+
 # Validate .readignore syntax and report each adapter's install status
 readignore check
 
@@ -307,8 +312,7 @@ brew tap 0xByteBard404/tap
 brew install readignore
 ```
 
-(Requires the `0xByteBard404/homebrew-tap` repo — available once the first v0.3
-release publishes.)
+(Requires the `0xByteBard404/homebrew-tap` repo.)
 
 **Coming soon:** Scoop (Windows).
 

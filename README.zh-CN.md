@@ -112,6 +112,11 @@ readignore install claude-code          # 单个适配器
 readignore install --all                # 本仓库检测到的全部适配器
 readignore install claude-code --force  # 覆盖已有文件
 
+# 移除某个适配器的产物（install 的逆操作）
+readignore uninstall claude-code            # 单个适配器
+readignore uninstall --all                  # 本仓库检测到的全部适配器
+readignore uninstall claude-code --dry-run  # 仅预览，不真删
+
 # 校验 .readignore 语法并报告每个适配器的安装状态
 readignore check
 
@@ -289,7 +294,7 @@ brew tap 0xByteBard404/tap
 brew install readignore
 ```
 
-（需 `0xByteBard404/homebrew-tap` 仓库——首个 v0.3 release 发布后即可用。）
+（需 `0xByteBard404/homebrew-tap` 仓库。）
 
 **即将推出：** Scoop（Windows）。
 
