@@ -113,8 +113,8 @@ func TestMatches_GlobWildcards(t *testing.T) {
 	// ? 单字符通配
 	p, err := Parse("secr?t\n")
 	assert.NoError(t, err)
-	assert.True(t, p.Matches("secret"))  // ? = e
-	assert.False(t, p.Matches("secrt"))  // ? 要求恰好一个字符
+	assert.True(t, p.Matches("secret"))   // ? = e
+	assert.False(t, p.Matches("secrt"))   // ? 要求恰好一个字符
 	assert.False(t, p.Matches("secreet")) // ? 只要一个
 
 	// [ab] 字符类
