@@ -223,7 +223,13 @@ func pipeTest(t *testing.T, repoRoot, binDir, jsonInput string) (string, string,
 }
 
 func denyJSON(tool, field, value string) string {
-	return `{"tool_name":"` + tool + `","tool_input":{"` + field + `":"` + value + `"}}`
+	// value 经 JSON 转义（与 claudecode_test 一致；含反斜杠/引号等必须转义，
+	// 否则 hook-check 的 encoding/json 解析失败 → 放行 → 漏判）。
+	b, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return `{"tool_name":"` + tool + `","tool_input":{"` + field + `":` + string(b) + `}}`
 }
 
 func denyCase(t *testing.T, repoRoot, binDir, label, tool, field, value string) {

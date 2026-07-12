@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -167,8 +168,13 @@ func pipeTest(t *testing.T, repoRoot, binDir, jsonInput string) (string, string,
 // Claude Code 实际传入的是 {"tool_input":{...}, "tool_name":"..."}。
 // 我们的 sh 只关心从原始文本里抽取字段，所以这里写成接近真实的结构。
 func denyJSON(tool, field, value string) string {
-	// field 不带尾随引号，便于 Bash/Grep/Glob/Read 各自字段名拼接。
-	return `{"tool_name":"` + tool + `","tool_input":{"` + field + `":"` + value + `"}}`
+	// value 经 JSON 转义（真实 Claude Code 传合法 JSON；含反斜杠/引号等必须转义，
+	// 否则 v0.3.3 hook-check 的 encoding/json 解析失败 → 放行 → 漏判）。
+	b, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return `{"tool_name":"` + tool + `","tool_input":{"` + field + `":` + string(b) + `}}`
 }
 
 // denyCase / allowCase 是 pipe-test 的断言封装，集中把「期望 deny」与「期望 allow」语义化。

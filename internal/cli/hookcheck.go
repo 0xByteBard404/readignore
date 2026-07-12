@@ -87,9 +87,8 @@ func runHookCheck(in io.Reader, out io.Writer) error {
 	// 路径字段（Read/Grep/Glob）：直接 match，精确无绕过。
 	for _, field := range []string{"file_path", "path", "pattern"} {
 		if v := input.ToolInput[field]; v != "" {
-			// filepath.ToSlash 规范化 Windows 反斜杠 → 正斜杠（跨平台匹配，
-			// go-git matcher 按 / 分段；否则 sub\id_rsa 被当单段，漏判 **/id_rsa）。
-			if m.Matches(filepath.ToSlash(v)) {
+			// Matches 内部已规范化 Windows 反斜杠 → 正斜杠（parser.go），直接传即可。
+			if m.Matches(v) {
 				writeOut(out, hookCheckDenyJSON)
 				return nil
 			}
