@@ -30,6 +30,15 @@ the Claude Code/codex hook falsely blocking legitimate Bash commands.
     预览。复用 `Generate` 取产物清单（无需 manifest）。不删 `.readignore`。补上
     dogfood 时发现的「能 install 不能 uninstall」不对称缺口。
 
+- **`readignore update` subcommand** (`internal/cli`): refreshes an adapter's
+  generated files to the current readignore version — equivalent to
+  `install --force`. Use it after upgrading readignore to pick up hook/adapter
+  improvements (e.g. the false-positive fix in this release: `readignore update
+  claude-code` refreshes `.claude/hooks/readignore.sh`).
+  — **`readignore update` 子命令**（`internal/cli`）：把适配器产物刷新到当前
+    readignore 版本——等价于 `install --force`。readignore 升级后用它拾取钩子/适配器
+    改进（如本次误报修复：`readignore update claude-code` 刷新 `.claude/hooks/readignore.sh`）。
+
 ### Fixed / 修复
 
 - **Hook no longer false-positives on Bash commands** (`internal/adapter/shared/hookengine`):
