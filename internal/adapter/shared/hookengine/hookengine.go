@@ -79,12 +79,23 @@ for field in file_path path pattern; do
 done
 
 # command 字段（Bash 工具）整体当 shell 命令处理：按空白/shell 元字符切 token，
-# 逐个调 readignore match。覆盖：cat .env / grep foo secret.pem / scp sub/id_rsa host:/ 等。
+# 只对「像路径」的 token 调 readignore match——跳过命令名/选项/字符串值，避免把
+# git config --global user.email x@y 这类合法命令误判命中（false positive）。
+# 覆盖：cat .env / grep foo secret.pem / scp sub/id_rsa host:/ 等。
+looks_like_path() {
+  case "$1" in
+    -*) return 1 ;;     # --global / -rf / -n  等选项
+    */*) return 0 ;;    # sub/id_rsa, ./.env.production, host:/path
+    *.*) return 0 ;;    # 含点：dotfile（.env .aws）或带扩展名（secret.pem, config.json）
+  esac
+  [ -e "$1" ]           # 磁盘存在兜底（无点无 / 的真实文件名，如 README）
+}
 val=$(extract_field "command")
 if [ -n "$val" ]; then
   # 用一组常见分隔符切 token（保守：不破坏文件名里的 . _ - +）。
   for tok in $(printf '%s' "$val" | tr ' \t|;<>&"'\''(){}' '\n'); do
     [ -z "$tok" ] && continue
+    looks_like_path "$tok" || continue
     if ! readignore match "$tok" >/dev/null 2>&1; then
       deny
     fi

@@ -230,6 +230,10 @@ func TestIntegration_PipeTest_RealGeneratedScripts(t *testing.T) {
 	denyCase(t, repoRoot, binDir, "Read ./sub/dir/id_rsa", "Read", "file_path", "./sub/dir/id_rsa")
 	denyCase(t, repoRoot, binDir, "Bash: cat ./.env.production", "Bash", "command", "cat ./.env.production")
 	allowCase(t, repoRoot, binDir, "Bash: cat README.md", "Bash", "command", "cat README.md")
+	// v0.3.1 回归：钩子 Bash token 误报修复——合法命令的选项/值不再被当路径误判。
+	allowCase(t, repoRoot, binDir, "Bash: git config user.email (选项/值不匹配)", "Bash", "command", "git config --global user.email a@b.com")
+	allowCase(t, repoRoot, binDir, "Bash: ls -la /tmp (选项+非敏感路径)", "Bash", "command", "ls -la /tmp")
+	denyCase(t, repoRoot, binDir, "Bash: grep foo .env (多 token, .env 命中)", "Bash", "command", "grep foo .env")
 	allowCase(t, repoRoot, binDir, "Grep path=.envrc (非 .env.*)", "Grep", "path", ".envrc")
 
 	// Windows 反斜杠路径：sh/readignore match 应规范化为 / 后判定。
