@@ -57,6 +57,8 @@ Strength tiers are **honest**, not marketing:
 | **Cursor** | soft | `.cursor/rules` natural-language advisory (model may comply). | 🗺 roadmap |
 | **kilo code** | — | mechanism TBD. | 🗺 roadmap |
 
+> ⚠️ **Known boundary (Claude Code):** the `Read` tool can bypass `PreToolUse` hooks / `permissions.deny` in some configs ([anthropics/claude-code#37540](https://github.com/anthropics/claude-code/issues/37540)). readignore's hook still materially raises the bar; for full coverage pair it with filesystem permissions and/or a secret manager (zero-disk secrets).
+
 ### What "strength" means
 
 - **hard** — code runs *before* the tool executes (or before its output reaches
