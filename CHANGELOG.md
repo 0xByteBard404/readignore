@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added / 新增
 
+<!-- 下次发版在此添加 -->
+
+## [0.4.0] - 2026-07-14
+
+New adapter: **kilocode** (kilo.ai). Plus two build/install fixes — a module-path
+typo that broke `make tidy`/lint in CI, and a wrong npm package name in the
+installer's Windows hint.
+
+新适配器：**kilocode**（kilo.ai）。外加两个构建/安装修复——一处模块路径拼写错误
+（曾在 CI 破坏 `make tidy`/lint），一处安装脚本 Windows 提示里的 npm 包名错误。
+
+### Added / 新增
+
 - **kilocode adapter** (`internal/adapter/kilocode`, strength: **config**): generates
   `kilo.json` with `permission.read` deny/allow globs for [kilo code](https://kilo.ai)
   (open-source AI coding agent, OpenCode fork). Detects `.kilo/`, `kilo.json`, `.kilocode/`.
@@ -22,6 +35,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     含 `permission.read` deny/allow glob。检测 `.kilo/`、`kilo.json`、`.kilocode/`。
     处理 `**/` 前缀剥离（kilocode wildcard 不支持 `**`）。因已知 deny 绕过 bug（#8293、
     #11637），诚实标为 `config`。
+
+### Fixed / 修复
+
+- **Wrong npm package name in installer's Windows hint** (`install.sh`): the
+  Windows/MINGW error pointed at `@caixuetang/readignore`, a scope that does not
+  exist on npm. Corrected to the real package name `readignore`.
+  — **安装脚本 Windows 提示里的 npm 包名错误**（`install.sh`）：Windows/MINGW 错误
+    提示指向 `@caixuetang/readignore`——npm 上不存在的 scope。已改为真实包名 `readignore`。
+- **Module-path typo broke `make tidy` and CI lint** (`internal/cli/root.go`): the
+  blank import for `internal/adapter/opencode` was spelled
+  `github.com/0ByteBard404/...` (missing the `x` in `0xByteBard404`), so Go treated
+  the project's own internal package as external and tried to fetch it from GitHub,
+  breaking `make tidy` and lint. Restored the `x` so the import resolves locally.
+  — **模块路径拼写错误导致 `make tidy` 与 CI lint 失败**（`internal/cli/root.go`）：
+    `internal/adapter/opencode` 的 blank import 拼成
+    `github.com/0ByteBard404/...`（`0xByteBard404` 缺了 `x`），Go 于是把项目自身的
+    internal 包当成外部 module 去 GitHub 拉，导致 `make tidy` 与 lint 失败。已补回 `x`，
+    import 本地解析正常。
 
 ## [0.3.3] - 2026-07-12
 
@@ -291,7 +322,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.4.0
 [0.3.3]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.3
 [0.3.2]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.2
 [0.3.1]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.1
