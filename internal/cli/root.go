@@ -37,7 +37,8 @@ import (
 	// （registry 按注册先后返回，但具体顺序对 CLI 列表展示无功能影响）。
 	_ "github.com/0xByteBard404/readignore/internal/adapter/claudecode"
 	_ "github.com/0xByteBard404/readignore/internal/adapter/codex"
-	_ "github.com/0xByteBard404/readignore/internal/adapter/opencode"
+	_ "github.com/0xByteBard404/readignore/internal/adapter/kilocode"
+	_ "github.com/0ByteBard404/readignore/internal/adapter/opencode"
 	_ "github.com/0xByteBard404/readignore/internal/adapter/pi"
 )
 

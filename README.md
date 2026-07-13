@@ -57,7 +57,7 @@ Strength tiers are **honest**, not marketing:
 | **pi** | **hard** | `.pi/extensions/readignore.ts` TypeScript extension that **overrides** the built-in `read` tool — calls `readignore match` and returns `Access denied` for matched paths before the file is read. Auto-loaded at startup. | ✅ shipped |
 | **opencode** | **config** | `permission.read` deny/allow globs in `opencode.json`; enforced when opencode loads config. | ✅ shipped |
 | **Cursor** | soft | `.cursor/rules` natural-language advisory (model may comply). | 🗺 roadmap |
-| **kilo code** | — | mechanism TBD. | 🗺 roadmap |
+| **kilo code** | config | `kilo.json` permission.read deny/allow globs; enforced when kilocode loads config. | ✅ shipped |
 
 > ⚠️ **Known boundary (Claude Code):** the `Read` tool can bypass `PreToolUse` hooks / `permissions.deny` in some configs ([anthropics/claude-code#37540](https://github.com/anthropics/claude-code/issues/37540)). readignore's hook still materially raises the bar; for full coverage pair it with filesystem permissions and/or a secret manager (zero-disk secrets).
 
