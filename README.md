@@ -120,6 +120,7 @@ readignore generate claude-code
 readignore generate codex
 readignore generate pi
 readignore generate opencode
+readignore generate kilocode
 
 # Write an adapter's output to disk
 readignore install claude-code          # one adapter
@@ -283,6 +284,34 @@ authority) and matched paths return `Access denied` before the file is ever
 read; everything else delegates to a normal read. No pi types are imported, so
 the file type-checks in isolation. As with the hook adapters, **editing
 `.readignore` takes effect immediately**.
+
+### kilo code (`readignore install kilocode`)
+
+A single `kilo.json` with `permission.read` deny/allow globs:
+
+```jsonc
+{
+  "permission": {
+    "read": {
+      ".env": "deny",
+      ".env.*": "deny",
+      ".env.example": "allow"
+    }
+  }
+}
+```
+
+kilo code (open-source, OpenCode fork) reads this on startup. Its permission
+system evaluates `allow`/`deny`/`ask` rules on every tool call — `read`,
+`edit`, `glob`, `grep`, `bash`.
+
+> **glob limitation:** kilo code's wildcard engine is simpler than gitignore —
+> no `**` directory traversal, no `!` negation, no anchoring. readignore
+> strips `**/` prefixes (basename match) and approximates `!` via "more
+> specific allow beats broader deny". Known bugs exist where deny rules are
+> occasionally bypassed ([#8293](https://github.com/Kilo-Org/kilocode/issues/8293),
+> [#11637](https://github.com/Kilo-Org/kilocode/issues/11637)), so this is
+> honestly labeled `config`, not `hard`.
 
 ---
 

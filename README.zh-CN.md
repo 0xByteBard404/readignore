@@ -115,6 +115,7 @@ readignore generate claude-code
 readignore generate codex
 readignore generate pi
 readignore generate opencode
+readignore generate kilocode
 
 # 把某个适配器的产物写入磁盘
 readignore install claude-code          # 单个适配器
@@ -269,6 +270,32 @@ pi 在启动时
 `readignore match <path>`（go-git 权威），匹配的路径在文件被读取前返回
 `Access denied`；其余情况委托给正常读取。不引入任何 pi 类型，因此文件可独立通过类型检查。
 与钩子适配器一样，**改 `.readignore` 立即生效**。
+
+### kilo code（`readignore install kilocode`）
+
+单个 `kilo.json`，含 `permission.read` 的 deny/allow glob：
+
+```jsonc
+{
+  "permission": {
+    "read": {
+      ".env": "deny",
+      ".env.*": "deny",
+      ".env.example": "allow"
+    }
+  }
+}
+```
+
+kilo code（开源，OpenCode fork）在启动时读取它。它的 permission 系统在每次工具调用
+（`read`、`edit`、`glob`、`grep`、`bash`）时按 `allow`/`deny`/`ask` 规则裁决。
+
+> **glob 限制：** kilo code 的 wildcard 引擎比 gitignore 简单——不支持 `**`
+> 目录穿越、不支持 `!` 取反、不支持锚定。readignore 剥掉 `**/` 前缀（basename 匹配），
+> 并用「更具体的 allow 击败更宽泛的 deny」近似 `!` 取反。已知 deny 规则偶尔被绕过
+> （[#8293](https://github.com/Kilo-Org/kilocode/issues/8293)、
+> [#11637](https://github.com/Kilo-Org/kilocode/issues/11637)），因此诚实标为
+> `config`，而非 `hard`。
 
 ---
 

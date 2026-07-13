@@ -10,6 +10,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added / 新增
+
+- **kilocode adapter** (`internal/adapter/kilocode`, strength: **config**): generates
+  `kilo.json` with `permission.read` deny/allow globs for [kilo code](https://kilo.ai)
+  (open-source AI coding agent, OpenCode fork). Detects `.kilo/`, `kilo.json`, `.kilocode/`.
+  Handles `**/` prefix stripping (kilocode wildcard has no `**` support). Honestly labeled
+  `config` due to known deny bypass bugs (#8293, #11637).
+  — **kilocode 适配器**（`internal/adapter/kilocode`，强度 **config**）：为
+    [kilo code](https://kilo.ai)（开源 AI 编程智能体，OpenCode fork）生成 `kilo.json`，
+    含 `permission.read` deny/allow glob。检测 `.kilo/`、`kilo.json`、`.kilocode/`。
+    处理 `**/` 前缀剥离（kilocode wildcard 不支持 `**`）。因已知 deny 绕过 bug（#8293、
+    #11637），诚实标为 `config`。
+
 ## [0.3.3] - 2026-07-12
 
 Hook moved to Go: the Claude Code/codex hook now forwards to a new
