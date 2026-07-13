@@ -67,7 +67,7 @@ detect_os() {
 		MINGW*|MSYS*|CYGWIN*)
 			die "Windows/MINGW detected. This installer targets unix.\n" \
 "      Use one of:\n" \
-"        - npm:    npm install -g @caixuetang/readignore\n" \
+"        - npm:    npm install -g readignore\n" \
 "        - Scoop:  (scoop bucket coming soon)\n" \
 "        - binary: download the .zip from ${REPO_URL}/releases/latest"
 			;;
