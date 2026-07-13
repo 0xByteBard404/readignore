@@ -14,6 +14,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/0xByteBard404/readignore/blob/main/LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
+🌐 **官网**: [readignore.vercel.app](https://readignore.vercel.app)
+
 > **TL;DR** — `npm i -g readignore && readignore init && readignore install --all`
 
 AI 编程智能体（Claude Code、Cursor、Codex、opencode、kilo code ……）在运行时可以

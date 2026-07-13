@@ -14,6 +14,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/0xByteBard404/readignore/blob/main/LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.25-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 
+🌐 **Website**: [readignore.vercel.app](https://readignore.vercel.app)
+
 > **TL;DR** — `npm i -g readignore && readignore init && readignore install --all`
 
 AI coding agents (Claude Code, Cursor, Codex, opencode, kilo code, …) can read
