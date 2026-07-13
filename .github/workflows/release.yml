@@ -3,7 +3,7 @@
 # 触发: git push origin v0.1.0
 # 产物: 跨平台二进制压缩包 (linux/darwin/windows × amd64/arm64) + checksums.txt
 # 权限: GITHUB_TOKEN 默认含 contents:write，用于创建 Release 并上传产物。
-# 依赖: .goreleaser.yml（仓库根，brews 段在 homebrew-tap 建仓前临时禁用）。
+# 依赖: .goreleaser.yml（仓库根；brews 段已启用，release 时推 0xByteBard404/homebrew-tap）。
 
 name: release
 

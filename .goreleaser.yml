@@ -3,10 +3,9 @@
 # 跨平台二进制发布 (linux/darwin/windows × amd64/arm64) + SHA256 checksums +
 # Homebrew tap + GitHub Release 自动化。
 #
-# 占位说明（发布前必填）:
-#   - <OWNER>: Homebrew tap 仓库的 owner（建议同本仓库 owner 0xByteBard404，
-#     但 tap 仓库名固定为 homebrew-tap，故填 owner 即可）。
-#   - 发布流程: 打 tag (git tag -a v0.1.0) → 推 tag → GitHub Action 触发 Release。
+# 状态（已就绪）:
+#   - brews.owner 已填 0xByteBard404，tap 仓库名固定为 homebrew-tap。
+#   - 发布流程: 打 tag (git tag -a vX.Y.Z) → 推 tag → GitHub Action 触发 Release。
 #
 # 校验: 若本地装了 goreleaser，跑 `goreleaser check` 验证 yaml 语法合法。
 # 版本: 本配置面向 goreleaser v2 (本文件无需 version: 2 顶层键，v2 默认兼容)。
@@ -37,7 +36,7 @@ builds:
       - amd64
       - arm64
     # 版本注入: 把 git tag 版本号 ldflags 进 internal/cli.Version
-    # (配合 cli.go 的 var Version = "dev"，未注入时为 "dev"，注入后为 release 版本)。
+    # (配合 internal/cli/root.go 的 var Version = "dev"，未注入时为 "dev"，注入后为 release 版本)。
     ldflags:
       - -s -w -X github.com/0xByteBard404/readignore/internal/cli.Version={{.Version}}
     # 忽略 ARM64 Windows（无主流工具链需求，避免噪音产物；如需补可删此 ignore）。
@@ -95,9 +94,9 @@ changelog:
 
 # Homebrew tap: 推送到 0xByteBard404/homebrew-tap 仓库，用户 `brew install` 即用。
 #
-# 前置条件（用户操作）: 必须先手动创建空仓库 0xByteBard404/homebrew-tap
-# （README 都不用），否则首次 release 推 tap 时 goreleaser 会报错。
-# 私有 tap 需额外配 HOMEBREW_TAP_GITHUB_TOKEN；公开 tap 默认用 GITHUB_TOKEN。
+# 前置条件（已完成）: 0xByteBard404/homebrew-tap 空仓库已创建。
+# 跨仓库写 homebrew-tap 必须用 HOMEBREW_TAP_GITHUB_TOKEN（GITHUB_TOKEN 只能写本仓库
+# readignore，与 tap 公开/私有无关）；secret 在 GitHub Actions 仓库设置里配置。
 # 创建后，用户安装方式:
 #   brew tap 0xByteBard404/tap
 #   brew install readignore
