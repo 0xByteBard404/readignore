@@ -23,10 +23,11 @@
 //
 // 强度声明（诚实标注）：kilocode 当前有 permission deny 配置，且有 hardRuleset +
 // ReadPermission.harden 机制（甚至已对 *.env 做了 hardening 先例）。但：
-//   1. 本适配器走 config 路径（生成 kilo.json），不修改 kilocode 源码，无法注入
-//      hardRuleset（那需要 fork/PR kilocode CLI）；
-//   2. kilocode 有已知 bug：deny 规则有时被绕过（GitHub #8293、#11637）；
-//   3. shell/bash 命令（cat .env）走 bash permission，不经过 read permission。
+//  1. 本适配器走 config 路径（生成 kilo.json），不修改 kilocode 源码，无法注入
+//     hardRuleset（那需要 fork/PR kilocode CLI）；
+//  2. kilocode 有已知 bug：deny 规则有时被绕过（GitHub #8293、#11637）；
+//  3. shell/bash 命令（cat .env）走 bash permission，不经过 read permission。
+//
 // 故本适配器强度标为 config，而非 hard。未来若 kilocode 上游 PR 接受 .readignore
 // 注入 hardRuleset，可升级为 hard。
 //
