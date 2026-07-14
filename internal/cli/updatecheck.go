@@ -1,4 +1,4 @@
-// Package cli 的 updatecheck 子模块：跑非热路径命令时检测 GitHub 最新版，
+// updatecheck 子模块：跑非热路径命令时检测 GitHub 最新版，
 // 落后则绿色双语提示真实升级渠道到 stderr。绝不阻断主命令、绝不报错。
 // 详见 docs/superpowers/specs/2026-07-14-update-notification-design.md。
 package cli

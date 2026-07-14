@@ -11,14 +11,17 @@ import (
 )
 
 func TestIsNewer(t *testing.T) {
-	cases := []struct{ latest, current string; want bool }{
-		{"0.4.1", "0.4.0", true},   // 落后 → 提示
-		{"0.4.0", "0.4.0", false},  // 相同 → 不提示
-		{"0.3.9", "0.4.0", false},  // 领先 → 不提示
-		{"1.0.0", "0.9.9", true},   // 跨大版本
-		{"v0.4.1", "0.4.0", true},  // 带 v 前缀
-		{"0.4", "0.4.0", false},    // 缺段按 0
-		{"0.4.1", "dev", true},     // current=dev（实际 Check 会先跳过 dev，这里只测纯比较）
+	cases := []struct {
+		latest, current string
+		want            bool
+	}{
+		{"0.4.1", "0.4.0", true},  // 落后 → 提示
+		{"0.4.0", "0.4.0", false}, // 相同 → 不提示
+		{"0.3.9", "0.4.0", false}, // 领先 → 不提示
+		{"1.0.0", "0.9.9", true},  // 跨大版本
+		{"v0.4.1", "0.4.0", true}, // 带 v 前缀
+		{"0.4", "0.4.0", false},   // 缺段按 0
+		{"0.4.1", "dev", true},    // current=dev（实际 Check 会先跳过 dev，这里只测纯比较）
 	}
 	for _, c := range cases {
 		assert.Equal(t, c.want, isNewer(c.latest, c.current), "isNewer(%q,%q)", c.latest, c.current)
