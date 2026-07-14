@@ -82,9 +82,22 @@ func newRootCmd() *cobra.Command {
 		// 真实命令错误也由 cli.Execute 打印，保持输出格式一致）。
 		SilenceUsage:  true,
 		SilenceErrors: true,
+		// PersistentPreRunE：每个子命令（及根）执行前触发 update-check。
+		// 与下面"--version 走 RunE 而非 PersistentPreRun"不冲突：
+		// --version 避开 PersistentPreRun 是因为"打印版本后立即退出"语义错位；
+		// update-check 走 PersistentPreRun 语义正确（每命令前查，且按 cmd.Name()
+		// 排除 match/hook-check/update）。两条注释各管各的用途。
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			// 用 cmd.ErrOrStderr() 而非裸 os.Stderr：生产等价（未 SetErr 时返回
+			// os.Stderr），但尊重 cobra 输出重定向——测试里 runCmd 的 SetErr(buf)
+			// 才能捕获提示。裸 os.Stderr 会绕过 buf 导致集成测试断言失败。
+			Check(cmd, cmd.ErrOrStderr())
+			return nil // Check 内部静默，绝不返回错误阻断主命令
+		},
 		// 版本 flag：--version / -v 直接打印版本退出。放在 root.RunE 而非
 		// PersistentPreRun，是因为后者在子命令存在时也会触发，语义错位；
 		// 而 root 自带 RunE 后，`readignore --version`（无子命令）才会走到这里。
+		// （注：PersistentPreRunE 仍用于 update-check，见上方——那是不同用途。）
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if v, _ := cmd.Flags().GetBool("version"); v {
 				fmt.Fprintf(cmd.OutOrStdout(), "readignore %s\n", Version)

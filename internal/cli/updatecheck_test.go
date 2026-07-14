@@ -116,6 +116,22 @@ func withVersion(t *testing.T, v string) {
 	t.Cleanup(func() { Version = prev })
 }
 
+// forceUpdateCheckOn 为集成测试强制开启 update-check 语义：
+// isTerminal=true（绕过 non-TTY 护栏）+ 注入缓存命中且落后（latest 0.4.1）。
+// 不改排除名单/env/dev 护栏（这些由具体测试场景控制）。
+func forceUpdateCheckOn(t *testing.T) {
+	t.Helper()
+	prevT := isTerminal
+	t.Cleanup(func() { isTerminal = prevT })
+	isTerminal = func() bool { return true }
+
+	prevDir := userCacheDir
+	t.Cleanup(func() { userCacheDir = prevDir })
+	dir := t.TempDir()
+	userCacheDir = func() (string, error) { return dir, nil }
+	require.NoError(t, saveCache(cacheEntry{LastChecked: time.Now(), LatestVersion: "0.4.1"}))
+}
+
 // cmdNamed 构造一个指定名字的空 cobra.Command（测护栏用）。
 func cmdNamed(name string) *cobra.Command {
 	c := &cobra.Command{Use: name}

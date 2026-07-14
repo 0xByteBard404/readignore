@@ -56,3 +56,30 @@ func TestResolveRepoRoot(t *testing.T) {
 	// 返回值应是合法目录路径（不含换行/空字符串）。
 	assert.False(t, strings.Contains(root, "\n"))
 }
+
+// PersistentPreRunE：跑非排除命令时触发 update-check（缓存命中落后 → 提示）。
+// 必须 chdirTemp：init 会在 cwd 生成 .readignore，直接跑会污染仓库目录。
+func TestRoot_UpdateCheckTriggersOnInit(t *testing.T) {
+	withVersion(t, "0.4.0")
+	forceUpdateCheckOn(t) // 注入 isTerminal=true + 缓存命中 latest=0.4.1（见 helper）
+	chdirTemp(t)          // init 落盘到临时目录，不污染仓库
+
+	out, err := runCmd(t, []string{"init"})
+	assert.NoError(t, err) // init 会因无 .readignore 模板正常跑/打印
+	assert.Contains(t, out, "new version 0.4.1")
+	assert.Contains(t, out, "brew upgrade readignore")
+}
+
+// match / update 不触发 update-check（排除名单）。
+// chdirTemp：match 读 .readignore、update 写产物，都需临时目录；即便
+// forceUpdateCheckOn 注入了 isTerminal=true，排除名单先于 non-TTY 护栏命中。
+func TestRoot_UpdateCheckSkipsOnMatchAndUpdate(t *testing.T) {
+	withVersion(t, "0.4.0")
+	forceUpdateCheckOn(t) // 即便强制开启，排除命令也应跳过
+	chdirTemp(t)
+
+	for _, args := range [][]string{{"match", ".readignore"}, {"update"}} {
+		out, _ := runCmd(t, args)
+		assert.NotContains(t, out, "new version", "命令 %v 不应触发 update-check", args)
+	}
+}
