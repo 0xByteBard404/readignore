@@ -13,6 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const (
@@ -153,4 +156,53 @@ func printUpgradeNotice(w io.Writer, current, latest string) {
 	fmt.Fprintf(w, "%sreadignore：新版本 %s 可用（当前 %s）。"+
 		"升级：brew upgrade readignore / npm i -g readignore / 重跑 install.sh。%s\n",
 		green, latest, current, reset)
+}
+
+// updateCheckSkip 是不触发 update-check 的命令名集合：
+// match / hook-check 是 hook 热路径（每秒多次调用，联网不可接受）；
+// update 是维护命令（刷新适配器产物），且常被误作升级命令，提示打扰 + 突兀。
+var updateCheckSkip = map[string]bool{
+	"match":      true,
+	"hook-check": true,
+	"update":     true,
+}
+
+// isTerminal 可注入（测试覆盖）。生产查 os.Stderr 是否 TTY。
+var isTerminal = func() bool {
+	return term.IsTerminal(int(os.Stderr.Fd()))
+}
+
+// Check 在命令执行前做新版本检测。绝不返回 error、绝不阻断主命令
+// （网络/解析失败一律静默）。stderr 是提示输出（生产 os.Stderr）。
+//
+// 护栏顺序（任一命中即静默返回）：dev 版本 → 热路径/update 命令 →
+// 禁用 env → non-TTY。然后查缓存：24h 内用缓存 latest_version；
+// 到期则 HTTP 查（成功才更新 latest_version，但 last_checked 总更新）。
+// 落后则绿色双语提示。
+func Check(cmd *cobra.Command, stderr io.Writer) {
+	if Version == "dev" {
+		return
+	}
+	if updateCheckSkip[cmd.Name()] {
+		return
+	}
+	if os.Getenv(noUpdateCheckEnv) != "" {
+		return
+	}
+	if !isTerminal() {
+		return
+	}
+
+	c, _ := loadCache() // 失败零值，静默
+	if c.LatestVersion == "" || time.Since(c.LastChecked) >= updateCheckInterval {
+		if latest, err := fetchLatest(); err == nil {
+			c.LatestVersion = latest
+		}
+		c.LastChecked = time.Now()
+		_ = saveCache(c) // 失败静默
+	}
+
+	if c.LatestVersion != "" && isNewer(c.LatestVersion, Version) {
+		printUpgradeNotice(stderr, Version, c.LatestVersion)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -105,4 +106,98 @@ func TestPrintUpgradeNotice_NoReadignoreUpdate(t *testing.T) {
 	assert.Contains(t, out, "\033[32m")
 	// 绝不含误导性的 readignore update
 	assert.NotContains(t, out, "readignore update")
+}
+
+// withVersion 临时把 Version 设成 v，测试后恢复（Check 的 dev 护栏要用）。
+func withVersion(t *testing.T, v string) {
+	t.Helper()
+	prev := Version
+	Version = v
+	t.Cleanup(func() { Version = prev })
+}
+
+// cmdNamed 构造一个指定名字的空 cobra.Command（测护栏用）。
+func cmdNamed(name string) *cobra.Command {
+	c := &cobra.Command{Use: name}
+	return c
+}
+
+func TestCheck_DevSkipped(t *testing.T) {
+	withVersion(t, "dev")
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf) // 不注入缓存/HTTP，dev 应最先返回
+	assert.Empty(t, buf.String(), "dev 版本不应有任何输出")
+}
+
+func TestCheck_SkipCommands(t *testing.T) {
+	withVersion(t, "0.4.0")
+	// 注入缓存让"若执行到查询"会提示；但 skip 命令应在查询前返回
+	prevCache := userCacheDir
+	t.Cleanup(func() { userCacheDir = prevCache })
+	userCacheDir = func() (string, error) { return t.TempDir(), nil }
+
+	for _, name := range []string{"match", "hook-check", "update"} {
+		var buf bytes.Buffer
+		Check(cmdNamed(name), &buf)
+		assert.Empty(t, buf.String(), "命令 %q 应被跳过无输出", name)
+	}
+}
+
+func TestCheck_EnvOptOut(t *testing.T) {
+	withVersion(t, "0.4.0")
+	require.NoError(t, os.Setenv(noUpdateCheckEnv, "1"))
+	t.Cleanup(func() { os.Unsetenv(noUpdateCheckEnv) })
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf)
+	assert.Empty(t, buf.String(), "env 禁用应无输出")
+}
+
+func TestCheck_NonTTYOptOut(t *testing.T) {
+	withVersion(t, "0.4.0")
+	prev := isTerminal
+	t.Cleanup(func() { isTerminal = prev })
+	isTerminal = func() bool { return false }
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf)
+	assert.Empty(t, buf.String(), "non-TTY 应无输出")
+}
+
+func TestCheck_CacheHit_NotifiesWhenBehind(t *testing.T) {
+	withVersion(t, "0.4.0")
+	// 注入缓存：命中（last_checked=now），latest=0.4.1 → 提示
+	prevCache := userCacheDir
+	t.Cleanup(func() { userCacheDir = prevCache })
+	dir := t.TempDir()
+	userCacheDir = func() (string, error) { return dir, nil }
+	require.NoError(t, saveCache(cacheEntry{LastChecked: time.Now(), LatestVersion: "0.4.1"}))
+
+	// 注入 isTerminal=true：go test 下 os.Stderr 非 TTY，须强制越过 non-TTY 护栏
+	// 才能真正走到缓存/提示路径（否则空 buf 是护栏跳过，不是缓存逻辑）。
+	prevTerm := isTerminal
+	t.Cleanup(func() { isTerminal = prevTerm })
+	isTerminal = func() bool { return true }
+
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf)
+	out := buf.String()
+	assert.Contains(t, out, "new version 0.4.1")
+	assert.Contains(t, out, "brew upgrade readignore") // CTA 真实渠道
+}
+
+func TestCheck_CacheHit_NoNoticeWhenCurrent(t *testing.T) {
+	withVersion(t, "0.4.0")
+	prevCache := userCacheDir
+	t.Cleanup(func() { userCacheDir = prevCache })
+	dir := t.TempDir()
+	userCacheDir = func() (string, error) { return dir, nil }
+	require.NoError(t, saveCache(cacheEntry{LastChecked: time.Now(), LatestVersion: "0.4.0"})) // 相同
+
+	// 同上：注入 isTerminal=true，确保真正走到缓存比较（而非被 non-TTY 护栏跳过）。
+	prevTerm := isTerminal
+	t.Cleanup(func() { isTerminal = prevTerm })
+	isTerminal = func() bool { return true }
+
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf)
+	assert.Empty(t, buf.String(), "版本相同不应提示")
 }
