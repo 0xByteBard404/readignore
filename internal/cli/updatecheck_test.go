@@ -217,3 +217,38 @@ func TestCheck_CacheHit_NoNoticeWhenCurrent(t *testing.T) {
 	Check(cmdNamed("init"), &buf)
 	assert.Empty(t, buf.String(), "版本相同不应提示")
 }
+
+// TestCheck_FirstFetchFailure_NoRetryStorm 验证 spec §7：首次 fetch 失败后
+// （latest 保持空、last_checked 已写 now）不应在 24h 内重发 HTTP。
+// 修前 fetch 触发条件的左子句 `c.LatestVersion == ""` 让条件每次短路 true，
+// 无视 24h 退避——本测试在修前会 FAIL（hits=2）。
+func TestCheck_FirstFetchFailure_NoRetryStorm(t *testing.T) {
+	withVersion(t, "0.4.0")
+
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	prevURL := latestAPIURL
+	t.Cleanup(func() { latestAPIURL = prevURL })
+	latestAPIURL = srv.URL
+
+	// 模拟首次 fetch 失败后的状态：latest 空、last_checked 刚写（24h 内）
+	prevCache := userCacheDir
+	t.Cleanup(func() { userCacheDir = prevCache })
+	dir := t.TempDir()
+	userCacheDir = func() (string, error) { return dir, nil }
+	require.NoError(t, saveCache(cacheEntry{LastChecked: time.Now(), LatestVersion: ""}))
+
+	prevTerm := isTerminal
+	t.Cleanup(func() { isTerminal = prevTerm })
+	isTerminal = func() bool { return true }
+
+	var buf bytes.Buffer
+	Check(cmdNamed("init"), &buf)
+	Check(cmdNamed("init"), &buf)
+	assert.Equal(t, 0, hits, "24h 内不应重试 fetch（last_checked 退避）")
+	assert.Empty(t, buf.String(), "latest 空 → 不提示")
+}

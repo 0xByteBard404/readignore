@@ -194,7 +194,11 @@ func Check(cmd *cobra.Command, stderr io.Writer) {
 	}
 
 	c, _ := loadCache() // 失败零值，静默
-	if c.LatestVersion == "" || time.Since(c.LastChecked) >= updateCheckInterval {
+	// 冷启动时 cacheEntry{} 零值的 LastChecked（time.Time 零值）让 time.Since 返回巨大正数 ≥24h，
+	// 照样触发首次 fetch——故无需额外判 LatestVersion==""。若加该左子句，首次 fetch 失败后
+	//（latest 保持空、last_checked 已写 now）会让条件每次短路 true、无视 24h 退避、每次重发 HTTP，
+	// 违背 spec §7（失败也更新 last_checked 防重试风暴）。
+	if time.Since(c.LastChecked) >= updateCheckInterval {
 		if latest, err := fetchLatest(); err == nil {
 			c.LatestVersion = latest
 		}
