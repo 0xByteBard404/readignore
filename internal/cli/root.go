@@ -76,7 +76,9 @@ func newRootCmd() *cobra.Command {
   readignore install claude-code  把产物写到磁盘
   readignore check                校验 .readignore 并报告各适配器安装状态
 
-仓库根默认取当前工作目录。规则文件名固定为 .readignore。`,
+仓库根默认取当前工作目录。规则文件名固定为 .readignore。
+
+（提示：readignore 会每 24h 检查新版本并在 stderr 提示；设 READIGNORE_NO_UPDATE_CHECK=1 关闭。）`,
 		// 子命令出错时不打印 usage（错误信息已足够清晰）；同时 SilenceErrors
 		// 让 cobra 不自动打印 error（--version 走哨兵错误，由 cli.Execute 统一处理；
 		// 真实命令错误也由 cli.Execute 打印，保持输出格式一致）。

@@ -340,6 +340,24 @@ brew install readignore
 
 ---
 
+## 更新检查
+
+`readignore` 在你跑非热路径命令时，**最多每 24 小时一次** 检查
+`https://github.com/0xByteBard404/readignore/releases/latest` 是否有新版本，落后则向
+stderr 打印绿色中英双语提示。`match` / `hook-check` / `update` 命令、以及 stderr 非
+TTY（管道、CI）时自动跳过。
+
+这是一次"phone-home"（请求会以你的 IP 到达 GitHub）。如需完全关闭，设置：
+
+```
+READIGNORE_NO_UPDATE_CHECK=1
+```
+
+检查会写 `<缓存目录>/readignore/version-check.json`（最新版本号 + 上次检查时间）。它
+绝不阻塞或导致命令失败——网络错误一律静默忽略。
+
+---
+
 ## 为什么不直接用 `.gitignore` 或 `permissions.deny`？
 
 | 方案 | 漏掉什么 |

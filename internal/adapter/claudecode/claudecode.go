@@ -4,12 +4,12 @@
 //
 // 产物两件套（Generate 返回，由调用方/安装层写入磁盘）：
 //   - .claude/hooks/readignore.sh  (0755)  从 tool_input JSON 抽取目标路径/命令，
-//     调 `readignore match` 判定是否命中 cwd/.readignore，命中即输出 PreToolUse deny JSON；
+//     调 `readignore hook-check` 判定是否命中 cwd/.readignore，命中即输出 PreToolUse deny JSON；
 //   - .claude/settings.json        (0)     PreToolUse 注册片段（与既有 settings.json
 //     的合并留给 CLI install 层，本适配器只 Generate 片段）。
 //
-// v0.3 起 sh 调 `readignore match`（go-git 权威），不再 fork py 引擎；.readignore 在
-// 运行时由 readignore match 直接读盘，故改 .readignore 不必 re-install 即立即生效。
+// v0.3.3 起 sh 调 `readignore hook-check`（go-git 权威），不再 fork py 引擎；.readignore 在
+// 运行时由 readignore hook-check 直接读盘，故改 .readignore 不必 re-install 即立即生效。
 // sh 内容由 [github.com/0xByteBard404/readignore/internal/adapter/shared/hookengine]
 // 生成（与 codex 适配器共用 Claude-style PreToolUse 协议）；本包只负责 Claude Code
 // 专属的配置包装（settings.json 片段）与文件路径/权限位的拼装。
@@ -71,13 +71,13 @@ func (Adapter) InstallInstructions() string {
 // Generate 依据 plan 产出两个文件（sh / settings.json）。
 //
 // v0.3 关键设计：
-//   - sh 调 `readignore match`（go-git 权威），.readignore 在运行时由 match 读盘，
+//   - sh 调 `readignore hook-check`（go-git 权威），.readignore 在运行时由 hook-check 读盘，
 //     故改 .readignore 不必 re-install 即立即生效（动态读核心价值）；
 //   - sh 内容由 [hookengine] 生成（与 codex 适配器共用 Claude-style PreToolUse 协议），
 //     plan.RawPatterns 不再参与生成（sh 通用，不内嵌 patterns）；
 //   - settings.json 只 Generate PreToolUse 片段，与既有 settings 的合并由 CLI 完成。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
-	_ = plan // v0.3: sh 通用，不读 plan（readignore match 运行时读 cwd/.readignore）。
+	_ = plan // v0.3: sh 通用，不读 plan（readignore hook-check 运行时读 cwd/.readignore）。
 	return []adapter.GeneratedFile{
 		{
 			Path:    ".claude/hooks/readignore.sh",

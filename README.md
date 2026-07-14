@@ -360,6 +360,24 @@ brew install readignore
 
 ---
 
+## Update checks
+
+`readignore` checks `https://github.com/0xByteBard404/readignore/releases/latest` for a
+newer version **at most once every 24 hours** when you run a non-hot-path command, and
+prints a green bilingual notice to stderr if yours is outdated. The check is skipped for
+`match` / `hook-check` / `update` and whenever stderr is not a TTY (pipes, CI).
+
+This is a "phone-home": the request reaches GitHub from your IP. To opt out entirely, set:
+
+```
+READIGNORE_NO_UPDATE_CHECK=1
+```
+
+The check writes `<cache-dir>/readignore/version-check.json` (latest version + last-checked
+timestamp). It never blocks or fails your command — network errors are silently ignored.
+
+---
+
 ## Why not just `.gitignore` or `permissions.deny`?
 
 | Approach | Fails to block |
