@@ -1,6 +1,10 @@
 package cli
 
 import (
+	"bytes"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -56,4 +60,49 @@ func TestLoadCache_MissingIsZero(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "", got.LatestVersion)
 	assert.True(t, got.LastChecked.IsZero())
+}
+
+func TestFetchLatest_OK(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "application/json", r.Header.Get("Accept"))
+		fmt.Fprint(w, `{"tag_name":"v0.4.1","name":"readignore 0.4.1"}`)
+	}))
+	defer srv.Close()
+	prev := latestAPIURL
+	t.Cleanup(func() { latestAPIURL = prev })
+	latestAPIURL = srv.URL
+
+	got, err := fetchLatest()
+	require.NoError(t, err)
+	assert.Equal(t, "0.4.1", got)
+}
+
+func TestFetchLatest_Non200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	prev := latestAPIURL
+	t.Cleanup(func() { latestAPIURL = prev })
+	latestAPIURL = srv.URL
+
+	_, err := fetchLatest()
+	require.Error(t, err)
+}
+
+func TestPrintUpgradeNotice_NoReadignoreUpdate(t *testing.T) {
+	var buf bytes.Buffer
+	printUpgradeNotice(&buf, "0.4.0", "0.4.1")
+	out := buf.String()
+	// CTA 必须指真实渠道
+	assert.Contains(t, out, "brew upgrade readignore")
+	assert.Contains(t, out, "npm i -g readignore")
+	assert.Contains(t, out, "install.sh")
+	// 双语都在
+	assert.Contains(t, out, "new version 0.4.1")
+	assert.Contains(t, out, "新版本 0.4.1")
+	// 绿色 ANSI
+	assert.Contains(t, out, "\033[32m")
+	// 绝不含误导性的 readignore update
+	assert.NotContains(t, out, "readignore update")
 }

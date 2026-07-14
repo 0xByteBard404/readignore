@@ -5,6 +5,9 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -17,8 +20,19 @@ const (
 	noUpdateCheckEnv    = "READIGNORE_NO_UPDATE_CHECK"
 )
 
+const (
+	updateCheckTimeout = 1 * time.Second
+	latestReleaseURL   = "https://api.github.com/repos/0xByteBard404/readignore/releases/latest"
+)
+
 // userCacheDir 可注入（测试覆盖到 t.TempDir()），生产用 os.UserCacheDir。
 var userCacheDir = os.UserCacheDir
+
+// latestAPIURL / httpClient 可注入（测试指向 httptest.Server）。
+var (
+	latestAPIURL = latestReleaseURL
+	httpClient   = &http.Client{Timeout: updateCheckTimeout}
+)
 
 // cacheEntry 是 version-check.json 的结构。
 // latest_version 仅 HTTP 成功时更新；last_checked 每次都更新（含失败，防重试风暴）。
@@ -98,4 +112,45 @@ func atoiOrZero(s string) int {
 		return 0
 	}
 	return n
+}
+
+// fetchLatest 查 GitHub releases/latest，返回 tag_name 去掉 v 前缀的版本号。
+// 任何错误（网络/超时/HTTP 非 200/JSON 缺 tag_name）都返回 error，由 Check 静默。
+func fetchLatest() (string, error) {
+	req, err := http.NewRequest(http.MethodGet, latestAPIURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github api status %d", resp.StatusCode)
+	}
+	var body struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	if body.TagName == "" {
+		return "", fmt.Errorf("empty tag_name")
+	}
+	return strings.TrimPrefix(body.TagName, "v"), nil
+}
+
+// printUpgradeNotice 把绿色双语提示写到 w（生产是 os.Stderr）。
+// CTA 指真实升级渠道，绝不指 readignore update（它不升级二进制）。
+func printUpgradeNotice(w io.Writer, current, latest string) {
+	green := "\033[32m"
+	reset := "\033[0m"
+	fmt.Fprintf(w, "%sreadignore: new version %s available (current %s). "+
+		"Upgrade: brew upgrade readignore / npm i -g readignore / re-run install.sh.%s\n",
+		green, latest, current, reset)
+	fmt.Fprintf(w, "%sreadignore：新版本 %s 可用（当前 %s）。"+
+		"升级：brew upgrade readignore / npm i -g readignore / 重跑 install.sh。%s\n",
+		green, latest, current, reset)
 }
