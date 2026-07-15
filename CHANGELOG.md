@@ -14,6 +14,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- 下次发版在此添加 -->
 
+## [0.5.0] - 2026-07-15
+
+New feature: **update-check** — readignore now checks GitHub for a newer version
+when you run a non-hot-path command, and prints a green bilingual notice to stderr
+if yours is outdated, pointing at real upgrade channels (brew/npm/install.sh).
+24h cache, 1s timeout, never blocks. See README "Update checks" for phone-home
+details and opt-out.
+
+新功能：**新版本检测提示**——readignore 现在会在你跑非热路径命令时检测 GitHub 最新版，
+落后则向 stderr 打印绿色双语提示，指明真实升级渠道（brew/npm/install.sh）。24 小时缓存、
+1 秒超时、绝不阻断主命令。phone-home 透明度与 opt-out 见 README "更新检查"节。
+
+### Added / 新增
+
+- **update-check** (`internal/cli/updatecheck.go`, mounted via root `PersistentPreRunE`):
+  detects the latest GitHub release when you run a non-hot-path command and prints a
+  green bilingual notice to stderr if yours is outdated. Real upgrade channels only
+  (`brew upgrade readignore` / `npm i -g readignore` / re-run `install.sh`) — never
+  `readignore update` (which only refreshes adapter artifacts, not the binary).
+  24h cache at `<cache-dir>/readignore/version-check.json`, 1s HTTP timeout, hand-written
+  semver (no `x/mod` dep). Guards (all silent, never block): `dev` build, hot-path
+  commands (`match`/`hook-check`) + `update`, `READIGNORE_NO_UPDATE_CHECK=1` env, non-TTY.
+  — **新版本检测提示**（`internal/cli/updatecheck.go`，经 root `PersistentPreRunE` 挂载）：
+    跑非热路径命令时检测 GitHub 最新版，落后则向 stderr 打印绿色双语提示。只指真实
+    升级渠道（`brew upgrade readignore` / `npm i -g readignore` / 重跑 `install.sh`）——
+    绝不指 `readignore update`（它只刷新适配器产物，不升级二进制）。24h 缓存于
+    `<缓存目录>/readignore/version-check.json`，1s HTTP 超时，手写 semver（不引入 `x/mod`）。
+    护栏（全部静默、绝不阻断）：`dev` 构建、热路径命令（`match`/`hook-check`）+ `update`、
+    `READIGNORE_NO_UPDATE_CHECK=1` 环境变量、non-TTY。
+
 ## [0.4.0] - 2026-07-14
 
 New adapter: **kilocode** (kilo.ai). Plus two build/install fixes — a module-path
@@ -322,7 +352,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.4.0
 [0.3.3]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.3
 [0.3.2]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.2
