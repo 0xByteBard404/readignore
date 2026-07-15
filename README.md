@@ -140,7 +140,7 @@ readignore uninstall claude-code --dry-run  # preview only, don't delete
 readignore check
 
 # Check if a path is denied by .readignore (exit 0=allow, 1=deny)
-# This is what hooks call at runtime — you can use it directly for debugging
+# The pi extension calls this at runtime; bash hooks use hook-check — you can use match directly for debugging
 readignore match .env
 ```
 

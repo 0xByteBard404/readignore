@@ -135,7 +135,7 @@ readignore uninstall claude-code --dry-run  # 仅预览，不真删
 readignore check
 
 # 检查某路径是否被 .readignore 拦截（exit 0=放行, 1=拦截）
-# 这正是钩子在运行时调用的命令——你也可以直接用它调试
+# pi 扩展运行时调此命令；bash 钩子用 hook-check——你可用 match 直接调试
 readignore match .env
 ```
 
