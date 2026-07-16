@@ -55,7 +55,9 @@ func TestRunHookCheck(t *testing.T) {
 		{"Bash cat sub/dir/id_rsa (深层 **)", `{"tool_name":"Bash","tool_input":{"command":"cat sub/dir/id_rsa"}}`, true},
 		// DENY：不同读法（不止 cat —— head/cp/tar 等都该拦 .env token）
 		{"Bash head .env", `{"tool_name":"Bash","tool_input":{"command":"head .env"}}`, true},
-		{"Bash cp .env /tmp/x (复制)", `{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`, true},
+		// cp 归 Edit 段（写目的端）。本夹具是裸 pattern（无段头）→ 只进 Read 段，
+		// Edit 段为空 → 不拦。体现分段语义：裸 .readignore 只护 Read；要拦 cp 须 [edit]。
+		{"Bash cp .env /tmp/x (复制, 裸规则只护 Read)", `{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`, false},
 		{"Bash tar czf x.tgz .env (打包)", `{"tool_name":"Bash","tool_input":{"command":"tar czf x.tgz .env"}}`, true},
 		{"Bash cat .env secret.pem (多敏感 token)", `{"tool_name":"Bash","tool_input":{"command":"cat .env secret.pem"}}`, true},
 
@@ -100,4 +102,70 @@ func TestRunHookCheck_BadJSON_Allows(t *testing.T) {
 	buf := &bytes.Buffer{}
 	require.NoError(t, runHookCheck(strings.NewReader(`not json`), buf))
 	assert.NotContains(t, buf.String(), "deny")
+}
+
+// === Task 3：分段式路由（tool_name → read/edit/delete 段）===
+
+// [edit] package-lock.json → Edit 工具改它应被拦。
+func TestRunHookCheck_EditSection(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", "[edit]\npackage-lock.json\n")
+	in := strings.NewReader(`{"tool_name":"Edit","tool_input":{"file_path":"package-lock.json"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Contains(t, out.String(), "permissionDecision") // deny
+}
+
+// package-lock 在 [edit] 不在 [read] → Read 工具读它应放行（段独立）。
+func TestRunHookCheck_EditSection_NotInRead(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", "[edit]\npackage-lock.json\n")
+	in := strings.NewReader(`{"tool_name":"Read","tool_input":{"file_path":"package-lock.json"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Empty(t, out.String()) // 放行
+}
+
+// C2：NotebookEdit 用 notebook_path（非 file_path）→ OpEdit + notebook_path 命中 edit 段。
+func TestRunHookCheck_NotebookEdit_NotebookPath(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", "[edit]\nnb.ipynb\n")
+	in := strings.NewReader(`{"tool_name":"NotebookEdit","tool_input":{"notebook_path":"nb.ipynb"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Contains(t, out.String(), "permissionDecision") // deny（notebook_path 命中 edit 段）
+
+	// 反向钉死：file_path 字段对 NotebookEdit 无效（NotebookEdit 只取 notebook_path）。
+	// 把 .ipynb 规则放进 [edit]，但工具传 file_path=nb.ipynb（notebook_path 缺失）→ 放行。
+	var out2 bytes.Buffer
+	in2 := strings.NewReader(`{"tool_name":"NotebookEdit","tool_input":{"file_path":"nb.ipynb"}}`)
+	require.NoError(t, runHookCheck(in2, &out2))
+	assert.Empty(t, out2.String()) // 放行（NotebookEdit 不读 file_path）
+}
+
+// Bash rm → OpDelete；[delete] src/ 模式（dirOnly）应命中裸 token "src"（matchAny 尾斜杠兜底）。
+func TestRunHookCheck_BashRm_DeleteSection(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", "[delete]\nsrc/\n")
+	in := strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"rm -rf src"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Contains(t, out.String(), "permissionDecision") // deny
+}
+
+// Bash cat → OpRead；[read] .env 命中。
+func TestRunHookCheck_BashCat_ReadSection(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", "[read]\n.env\n")
+	in := strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"cat .env"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Contains(t, out.String(), "permissionDecision") // deny
+}
+
+// parseDeletePaths：跳 - 选项；-- 后皆文件。
+func TestParseDeletePaths(t *testing.T) {
+	assert.Equal(t, []string{"src"}, parseDeletePaths("rm -rf src"))
+	assert.Equal(t, []string{"a", "b", "c"}, parseDeletePaths("rm a b c"))
+	assert.Equal(t, []string{"-weird"}, parseDeletePaths("rm -- -weird"))
 }

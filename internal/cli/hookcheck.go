@@ -78,36 +78,155 @@ func runHookCheck(in io.Reader, out io.Writer) error {
 	if err != nil {
 		return nil // 无 .readignore → 放行
 	}
-	m, err := readignore.Parse(string(raw))
+	sections, err := readignore.ParseSections(string(raw))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "readignore hook-check: %v\n", err)
 		return nil // Parse 失败 → 放行
 	}
 
-	// 路径字段（Read/Grep/Glob）：直接 match，精确无绕过。
-	for _, field := range []string{"file_path", "path", "pattern"} {
-		if v := input.ToolInput[field]; v != "" {
-			// Matches 内部已规范化 Windows 反斜杠 → 正斜杠（parser.go），直接传即可。
-			if m.Matches(v) {
-				writeOut(out, hookCheckDenyJSON)
-				return nil
-			}
+	// 按 tool_name 路由到对应段（read/edit/delete），各段独立匹配。
+	// Matches 内部已规范化 Windows 反斜杠 → 正斜杠（parser.go），直接传路径即可。
+	op, paths := routeToolInput(input.ToolName, input.ToolInput)
+	switch op {
+	case readignore.OpRead:
+		if matchAny(sections.Read, paths) {
+			writeOut(out, hookCheckDenyJSON)
+			return nil
 		}
-	}
-
-	// command（Bash）：切 token，只对路径式 token match。
-	// 注意：Bash 静态分析有固有天花板（变量展开 $F、间接路径 ln -s），无法 100%；
-	// 这里拦的是所有「字面路径式 token」，覆盖 cat .env / grep foo secret.pem 等。
-	if cmd := input.ToolInput["command"]; cmd != "" {
-		for _, tok := range tokenizeCommand(cmd) {
-			if looksLikePath(tok) && m.Matches(tok) {
-				writeOut(out, hookCheckDenyJSON)
-				return nil
-			}
+	case readignore.OpEdit:
+		if matchAny(sections.Edit, paths) {
+			writeOut(out, hookCheckDenyJSON)
+			return nil
+		}
+	case readignore.OpDelete:
+		if matchAny(sections.Delete, paths) {
+			writeOut(out, hookCheckDenyJSON)
+			return nil
+		}
+	case "unknown":
+		// 未知工具/命令：保守查 Read ∪ Delete（最致命两类）。
+		if matchAny(sections.Read, paths) || matchAny(sections.Delete, paths) {
+			writeOut(out, hookCheckDenyJSON)
+			return nil
 		}
 	}
 
 	return nil // 放行
+}
+
+// routeToolInput 按 tool_name 把请求映射到 (op, paths)。
+//   - Read/Grep/Glob → OpRead，取 file_path/path/pattern
+//   - Edit/Write → OpEdit，取 file_path
+//   - NotebookEdit → OpEdit，取 notebook_path（非 file_path —— Claude API 字段名）
+//   - Bash → classifyCommand(command) 按 verb 分类
+//   - 其余 → "unknown" + nil（保守放行，由调用方对未知工具查 Read∪Delete）
+func routeToolInput(toolName string, ti map[string]string) (readignore.Op, []string) {
+	switch toolName {
+	case "Read", "Grep", "Glob":
+		return readignore.OpRead, fields(ti, "file_path", "path", "pattern")
+	case "Edit", "Write":
+		return readignore.OpEdit, fields(ti, "file_path")
+	case "NotebookEdit":
+		return readignore.OpEdit, fields(ti, "notebook_path") // C2: notebook_path 非 file_path
+	case "Bash":
+		return classifyCommand(ti["command"])
+	}
+	return "unknown", nil
+}
+
+// fields 从 tool_input 取非空字段值（保留传入 key 顺序）。
+func fields(ti map[string]string, keys ...string) []string {
+	var out []string
+	for _, k := range keys {
+		if v := ti[k]; v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// classifyCommand 把 Bash command 按 verb 分类到 (op, paths)。
+//   - rm/rmdir/unlink → OpDelete + parseDeletePaths（精确跳选项）
+//   - cat/head/tail/less/more/grep/rg/awk/cut → OpRead + 路径式 token
+//   - sed → -i 改文件 = OpEdit，否则 OpRead
+//   - tee/dd/cp/mv/truncate → OpEdit
+//   - 含 '>' 重定向 → OpEdit
+//   - 其余 → "unknown" + 路径式 token（保守查 Read∪Delete）
+//
+// 注意：Bash 静态分析有固有天花板（变量展开 $F、间接路径 ln -s），无法 100%；
+// 这里拦的是所有「字面路径式 token」，覆盖 cat .env / grep foo secret.pem 等。
+func classifyCommand(command string) (readignore.Op, []string) {
+	toks := tokenizeCommand(command)
+	if len(toks) == 0 {
+		return "unknown", nil
+	}
+	verb := toks[0]
+	// 路径式 token（沿用 looksLikePath）。
+	var pathToks []string
+	for _, t := range toks[1:] {
+		if looksLikePath(t) {
+			pathToks = append(pathToks, t)
+		}
+	}
+	switch verb {
+	case "rm", "rmdir", "unlink":
+		return readignore.OpDelete, parseDeletePaths(command)
+	case "cat", "head", "tail", "less", "more", "grep", "rg", "awk", "cut":
+		return readignore.OpRead, pathToks
+	case "sed":
+		// sed -i 改文件 → edit；无 -i 只输出 → read。
+		if strings.Contains(command, " -i") {
+			return readignore.OpEdit, pathToks
+		}
+		return readignore.OpRead, pathToks
+	case "tee", "dd", "cp", "mv", "truncate":
+		return readignore.OpEdit, pathToks
+	}
+	// 含重定向 > / >> → edit。
+	if strings.Contains(command, ">") {
+		return readignore.OpEdit, pathToks
+	}
+	return "unknown", pathToks
+}
+
+// parseDeletePaths 从 rm/rmdir/unlink 命令提取路径参数。
+// 跳过 - 开头的选项；-- 之后皆文件（即便形如 -weird）。不展开变量/$()（静态分析天花板）。
+func parseDeletePaths(command string) []string {
+	toks := tokenizeCommand(command)
+	var paths []string
+	afterDoubleDash := false
+	for _, t := range toks[1:] { // 跳过 verb
+		if afterDoubleDash {
+			paths = append(paths, t)
+			continue
+		}
+		if t == "--" {
+			afterDoubleDash = true
+			continue
+		}
+		if strings.HasPrefix(t, "-") {
+			continue // 选项
+		}
+		paths = append(paths, t)
+	}
+	return paths
+}
+
+// matchAny 判断 paths 中是否有任一被 m 命中（命中即 deny）。
+//
+// 尾斜杠兜底：gitignore 的目录模式（如 "src/"）是 dirOnly，不命中无尾斜杠的裸 token
+// （rm -rf src 的 "src"）。补一次 p+"/" 形式，让目录模式对裸 token 也生效。
+// Matches 对 nil/空 matcher 返回 false（parser.go），空段安全。
+func matchAny(m *readignore.Matcher, paths []string) bool {
+	for _, p := range paths {
+		if m.Matches(p) {
+			return true
+		}
+		if !strings.HasSuffix(p, "/") && m.Matches(p+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 // tokenizeCommand 把 shell 命令切成 token。按空白 + 常见 shell 元符切（保守，
