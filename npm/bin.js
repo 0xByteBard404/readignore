@@ -1,58 +1,69 @@
 #!/usr/bin/env node
 /**
- * readignore npm 壳包 — bin 入口
+ * readignore npm 包 bin 入口。
  *
- * spawn postinstall 下载好的 Go 二进制（npm/bin/readignore[.exe]），
- * 透传 argv / stdin / stdout / stderr / exit code。
+ * 按当前平台选**包内**的 prebuilt Go binary（bin/<platform>/readignore[.exe]），
+ * spawn 并透传 argv / stdin / stdout / stderr / exit code。
  *
- * 若 binary 不存在（postinstall 未跑 / 失败），打印清晰报错并提示重新安装。
+ * binary 随包发布（npm publish 时含），**无 postinstall、无下载** —— allow-scripts
+ * 完全无关，默认配置 100% 可靠。
  */
-
 'use strict';
 
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const binName = process.platform === 'win32' ? 'readignore.exe' : 'readignore';
-const binPath = path.join(__dirname, 'bin', binName);
-
-if (!fs.existsSync(binPath)) {
-  console.error('[readignore] Binary not found at: ' + binPath);
-  console.error('');
-  console.error(
-    '  The platform binary was not installed. This usually means postinstall did not run or failed.',
-  );
-  console.error('  Re-install the package:');
-  console.error('    npm install readignore');
-  console.error('  or, if installed globally:');
-  console.error('    npm install -g readignore');
-  console.error('');
-  console.error(
-    '  If the GitHub Release is still a DRAFT, ask the maintainer to publish it first.',
-  );
-  process.exit(127); // 127 = command not found (POSIX 惯例)
+// platform/arch → 包内 binary 目录名。pure，可单测。
+function resolveBinaryPath(platform, arch) {
+  const map = {
+    'linux-x64': 'linux-x64',
+    'linux-arm64': 'linux-arm64',
+    'darwin-x64': 'darwin-x64',
+    'darwin-arm64': 'darwin-arm64',
+    'win32-x64': 'windows-x64',
+  };
+  const dir = map[`${platform}-${arch}`];
+  if (!dir) {
+    throw new Error(
+      `[readignore] Unsupported platform: ${platform}/${arch}. ` +
+        `Supported: linux (x64, arm64), darwin (x64, arm64), windows (x64).`,
+    );
+  }
+  const binName = platform === 'win32' ? 'readignore.exe' : 'readignore';
+  return path.join(__dirname, 'bin', dir, binName);
 }
 
-// stdio: 'inherit' 让子进程直接接管终端（stdin/stdout/stderr 全透传，
-// 含 TTY 颜色、Ctrl+C 信号）。child 退出码原样透传给父进程。
-const child = spawn(binPath, process.argv.slice(2), { stdio: 'inherit' });
-
-child.on('error', (err) => {
-  // 常见：EACCES（无执行权限）/ ENOENT（路径错）/ E2BIG（参数过长）。
-  console.error(`[readignore] Failed to spawn binary: ${err.message}`);
-  console.error(`  binary: ${binPath}`);
-  if (err.code === 'EACCES' && process.platform !== 'win32') {
-    console.error('  Try: chmod +x "' + binPath + '"');
+function main() {
+  let binPath;
+  try {
+    binPath = resolveBinaryPath(process.platform, process.arch);
+  } catch (err) {
+    console.error(err.message);
+    process.exit(127);
+    return;
   }
-  process.exit(126); // 126 = command found but not executable (POSIX 惯例)
-});
-
-child.on('exit', (code, signal) => {
-  if (signal) {
-    // 子进程被信号终止：以 128 + signal 退出（POSIX 惯例）。
-    process.exit(128 + (signal === 'SIGINT' ? 2 : 1));
-  } else {
-    process.exit(code ?? 0);
+  if (!fs.existsSync(binPath)) {
+    console.error(`[readignore] Binary not found at: ${binPath}`);
+    console.error('  The package may be corrupted or incompletely installed. Re-install:');
+    console.error('    npm install readignore');
+    process.exit(127);
+    return;
   }
-});
+  const child = spawn(binPath, process.argv.slice(2), { stdio: 'inherit' });
+  child.on('error', (err) => {
+    console.error(`[readignore] Failed to spawn binary: ${err.message}`);
+    if (err.code === 'EACCES' && process.platform !== 'win32') {
+      console.error(`  Try: chmod +x "${binPath}"`);
+    }
+    process.exit(126);
+  });
+  child.on('exit', (code, signal) => {
+    if (signal) process.exit(128 + (signal === 'SIGINT' ? 2 : 1));
+    else process.exit(code ?? 0);
+  });
+}
+
+if (require.main === module) main();
+
+module.exports = { resolveBinaryPath };

@@ -6,7 +6,7 @@
 
 This is the **npm wrapper package** for [readignore](https://github.com/0xByteBard404/readignore) — a Go CLI that adapts a single `.readignore` (gitignore syntax) into each AI coding agent's strongest native defense mechanism.
 
-> The `postinstall` hook downloads the right prebuilt Go binary for your platform from [GitHub Releases](https://github.com/0xByteBard404/readignore/releases). No Go toolchain required.
+> The npm package **bundles prebuilt Go binaries for all platforms** (linux/darwin × x64/arm64 + windows-x64) — no `postinstall` download, no Go toolchain, works regardless of npm's `allow-scripts` setting.
 
 ---
 
@@ -116,10 +116,8 @@ For the capability matrix, per-adapter details, negation caveats, and design not
 
 ## Wrapper package notes
 
-- This npm package is a thin wrapper. The actual CLI is a Go binary downloaded by `postinstall`.
-- `postinstall` verifies the download with SHA256 (from `checksums.txt`) when available.
-- To install without npm, see [alternative install methods](https://github.com/0xByteBard404/readignore#installation) (`go install`, direct binary download).
-- Offline / air-gapped install: pre-place the Go binary at `node_modules/readignore/bin/readignore[.exe]` and run `npm install readignore --ignore-scripts` to skip the download.
+- This npm package **bundles all 5 platform binaries** (linux/darwin × x64/arm64 + windows-x64, ~7MB). The right one is selected at runtime by `bin.js` based on your platform — **no `postinstall`, no download, no `allow-scripts` dependency**.
+- To install without npm, see [alternative install methods](https://github.com/0xByteBard404/readignore#installation) (`go install`, direct binary download, Homebrew, `curl | sh`).
 
 ---
 
