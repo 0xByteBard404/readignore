@@ -1,13 +1,18 @@
 // Package opencode 实现 opencode 适配器：把 .readignore 翻译成 opencode 的
-// permission 配置，在 opencode 加载时按 glob deny 文件读取。
+// permission 配置，在 opencode 加载时按 glob deny 文件读取/改写。
 //
-// opencode 的 permission 系统采用「glob → allow/ask/deny」三层模型，其中
-// read 权限直接控制文件读取工具（与 readignore「防读敏感文件」目标完全吻合）。
-// 故本适配器把 plan.RawPatterns 逐条翻译成 permission.read 的 glob 键：
-//   - 普通 pattern（deny）原样写入并标记 "deny"；
-//   - 取反行（!pattern，readignore 语义为「放行」）剥掉前导 ! 后写入 actual
-//     pattern 并标记 "allow"，依赖 opencode「更具体 glob 覆盖更宽泛」的机制
-//     实现放行（如 .env.example 比 .env.* 更具体，allow 胜出）。
+// opencode 的 permission 系统采用「glob → allow/ask/deny」三层模型。其 schema
+// （https://opencode.ai/config.json $defs/PermissionConfig）暴露的工具分类含
+// read 与 edit 两个 glob→decision 段（均 PermissionRuleConfig 形态），分别控制
+// 文件读取与改写工具；无 write 段（opencode 的写工具叫 edit），也无 delete 段
+// （删文件走 bash，本适配器不覆盖）。这与 readignore 的 read/edit 分段天然吻合：
+//
+//   - plan.Rules.Read → permission.read：普通 pattern 标 "deny"，取反行（!pattern，
+//     readignore 语义为「放行」）剥掉前导 ! 后标 "allow"，依赖 opencode「更具体
+//     glob 覆盖更宽泛」的机制实现放行（如 .env.example 比 .env.* 更具体，allow 胜出）；
+//   - plan.Rules.Edit → permission.edit：同上翻译，阻断对 edit 段声明文件的改写；
+//   - plan.Rules.Delete → 不支持（opencode 无 delete 权限段；删文件走 bash permission，
+//     属不同机制，本适配器不覆盖，InstallInstructions 如实标注）。
 //
 // 产出单文件 opencode.json（含官方 $schema 便于编辑器校验）。
 //
@@ -103,34 +108,48 @@ func (Adapter) Detect(repoRoot string) bool {
 // InstallInstructions 给出「如何让 opencode 读取所生成配置」的人类可读说明，
 // 并诚实标注当前限制：
 //   - 本适配器走 config deny/allow 路径，强度为 config（非 hard）；
+//   - 覆盖 read 段（permission.read）与 edit 段（permission.edit）；delete 段不支持
+//     （opencode 无 delete 权限分类，删文件走 bash permission，属不同机制，本适配器不覆盖）；
 //   - opencode 的 permission.ask 插件 hook 当前不被触发（issue #7006），故无法做执行前拦截；
 //   - opencode glob 无 gitignore 取反/顺序语义，本适配器用「更具体的 allow 覆盖宽泛 deny」
 //     近似实现取反，复杂取反链可能有边缘差异；
 //   - 带尾斜杠 pattern（如 secrets/）按目录锚定的行为以 opencode glob 引擎为准。
 func (Adapter) InstallInstructions() string {
-	return "已生成 opencode.json（permission.read deny/allow）。opencode 启动时自动读取该配置并按 glob 决定文件读取。" +
+	return "已生成 opencode.json（permission.read + permission.edit deny/allow）。opencode 启动时自动读取该配置并按 glob 决定文件读取/改写。" +
+		"覆盖范围：read 段（permission.read 阻断读取）+ edit 段（permission.edit 阻断改写）。delete 段不支持" +
+		"（opencode 无 delete 权限分类，删文件走 bash permission，属不同机制，本适配器不覆盖）。" +
 		"注意：本适配器强度为 config（非 hard）——opencode 的 permission.ask 可编程 hook 当前不被触发（issue #7006），" +
 		"故无法做到执行前硬拦，防护依赖 opencode 忠实加载配置。" +
 		"另：opencode glob 无 gitignore 取反/顺序语义，本适配器用「更具体的 allow 覆盖宽泛 deny」近似实现放行；" +
 		"复杂取反链（多条 ! 交织）或带尾斜杠目录锚定可能有边缘差异，依赖严格语义请用 claudecode 适配器。"
 }
 
-// Generate 依据 plan 产出单个 opencode.json：把 plan.RawPatterns 逐条翻译成
-// permission.read 的 glob→decision 键。
+// Generate 依据 plan 产出单个 opencode.json：把 plan.Rules.Read 与 plan.Rules.Edit
+// 分别翻译成 permission.read / permission.edit 的 glob→decision 键。
 //
-//   - 普通行（如 ".env"）写入 read[".env"] = "deny"；
-//   - 取反行（如 "!.env.example"，readignore 语义为放行）剥掉前导 ! 后写入
-//     read[".env.example"] = "allow"，依赖 opencode「更具体 glob 覆盖更宽泛」
-//     实现放行（.env.example 比 .env.* 更具体，allow 胜出）。
+//	read 段（plan.Rules.Read）→ permission.read：
+//	  - 普通行（如 ".env"）写入 read[".env"] = "deny"；
+//	  - 取反行（如 "!.env.example"，readignore 语义为放行）剥掉前导 ! 后写入
+//	    read[".env.example"] = "allow"，依赖 opencode「更具体 glob 覆盖更宽泛」
+//	    实现放行（.env.example 比 .env.* 更具体，allow 胜出）。
+//	edit 段（plan.Rules.Edit）→ permission.edit：同上翻译，阻断对 edit 段声明文件的改写。
+//
+// 分段读取（而非全集 RawPatterns）：opencode 的 permission 区分 read 与 edit 工具，
+// 故 [edit] 段声明的 pattern 应只阻断改写、不阻断读取——读 plan.Rules.Read/Edit
+// 分桶写入对应段，语义才正确（全集写进 read 会把 edit-only 文件也挡读，与用户意图相左）。
+// 对无段头的 .readignore（裸 pattern 全归 Read 段），行为与历史一致。
 //
 // 不在 map 里保留任何带前导 ! 的 key：opencode glob 把 ! 当字面字符，行为未定义，
 // 故 ! 必须剥干净（与既有 claudecode 适配器一致——取反语义在剥 ! 后表达）。
 //
-// 产出形态（示例，RawPatterns=[".env",".env.*","!.env.example"]）：
+// 产出形态（示例，Rules.Read=[".env",".env.*","!.env.example"], Rules.Edit=["secrets/*.key"]）：
 //
 //	{
 //	  "$schema": "https://opencode.ai/config.json",
 //	  "permission": {
+//	    "edit": {
+//	      "secrets/*.key": "deny"
+//	    },
 //	    "read": {
 //	      ".env": "deny",
 //	      ".env.*": "deny",
@@ -139,40 +158,30 @@ func (Adapter) InstallInstructions() string {
 //	  }
 //	}
 //
-// 注意：上面示例里 read 的键顺序看似与 RawPatterns 一致，但那是巧合——Go map 经
-// encoding/json 序列化时**按 key 字母序**输出（见 encoding/json 文档），与本适配器
-// 写入 map 的先后无关。此处顺序无关紧要：opencode 的 glob 匹配不依赖键顺序
-// （它靠 glob 特异性而非声明顺序求值，详见下方「取反语义限制」），所以字母序排列
-// 不影响最终 deny/allow 决策。
-//
-// 取反语义限制：opencode 无 gitignore 顺序/取反求值，「更具体 allow 胜出」是对常见
-// 用例的近似；复杂取反链（多条 ! 交织）可能有边缘差异，详见包 godoc。
+// 注意：上面示例里键顺序看似与声明相关，但那是巧合——Go map 经 encoding/json
+// 序列化时**按 key 字母序**输出（段名 edit/read、glob 键均字母序），与本适配器写入
+// 先后无关。此处顺序无关紧要：opencode 的 glob 匹配不依赖键顺序（靠 glob 特异性
+// 而非声明顺序求值），故字母序排列不影响最终 deny/allow 决策。
 //
 // 设计：
 //   - 只 Generate 配置片段，与既有 opencode.json 的深度合并由阶段5 CLI 完成
 //     （与 claudecode 处理 settings.json 的策略一致）；
+//   - read/edit 即便为空也保留（map[string]string 序列化为 {}），保证配置合法、
+//     段存在可被 opencode 解析；
 //   - Mode 0 表示用调用方默认权限（典型 0644）；
 //   - 文件路径恒为 opencode.json（相对仓库根），不依赖 plan.RepoRoot；
 //   - 用 encoding/json 序列化保证 JSON 语法合法，不手拼字符串。
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
-	patterns := sanitizePatterns(plan.RawPatterns)
+	read := buildDecisionMap(plan.Rules.Read)
+	edit := buildDecisionMap(plan.Rules.Edit)
 
-	read := make(map[string]string, len(patterns))
-	for _, p := range patterns {
-		if actual, ok := stripNegation(p); ok {
-			// readignore 取反 = 放行 → opencode allow（剥掉前导 ! 后的 actual pattern）。
-			read[actual] = "allow"
-			continue
-		}
-		read[p] = "deny"
-	}
-
-	// 顶层结构：{"$schema": ..., "permission": {"read": {glob: "deny", ...}}}。
-	// read 即便为空也保留（map[string]string 序列化为 {}），保证配置合法、可被 opencode 解析。
+	// 顶层结构：{"$schema": ..., "permission": {"read": {...}, "edit": {...}}}。
+	// 两段即便为空也保留（序列化为 {}），保证配置合法、段存在可被 opencode 解析。
 	doc := map[string]any{
 		"$schema": configSchema,
 		"permission": map[string]any{
 			"read": read,
+			"edit": edit,
 		},
 	}
 
@@ -188,6 +197,25 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 		Content: string(buf),
 		Mode:    0,
 	}}, nil
+}
+
+// buildDecisionMap 把一段原始 pattern 行翻译成 opencode 的 glob→decision map：
+//   - 去注释/空行（sanitizePatterns）；
+//   - 普通行 → "deny"；取反行（!pattern，readignore 语义为放行）剥 ! 后 → "allow"。
+//
+// read 段与 edit 段共用此翻译逻辑（两段在 opencode 侧的 glob→decision 形态一致）。
+func buildDecisionMap(raw []string) map[string]string {
+	patterns := sanitizePatterns(raw)
+	m := make(map[string]string, len(patterns))
+	for _, p := range patterns {
+		if actual, ok := stripNegation(p); ok {
+			// readignore 取反 = 放行 → opencode allow（剥掉前导 ! 后的 actual pattern）。
+			m[actual] = "allow"
+			continue
+		}
+		m[p] = "deny"
+	}
+	return m
 }
 
 // sanitizePatterns 规整待翻译的 patterns：去空白行与注释行（# 开头）。

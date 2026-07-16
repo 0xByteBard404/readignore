@@ -46,15 +46,26 @@ func runGenerate(out io.Writer, adapterID string) error {
 		return err
 	}
 
-	rawPatterns, err := loadPatterns(repoRoot)
+	sections, err := loadSections(repoRoot)
 	if err != nil {
 		return err
 	}
-
+	// 与 install 一致：用 ParseSections 的三段产物填 Plan.Rules；RawPatterns 取全集
+	// （Read+Edit+Delete）保持单一事实源语义——只消费「全集 deny」的 adapter（如 claudecode
+	// hook）行为不变，需要分段的 adapter（opencode/kilocode）改读 Rules。
 	plan := adapter.Plan{
-		RepoRoot:    repoRoot,
-		RawPatterns: rawPatterns,
+		RepoRoot: repoRoot,
+		Rules: adapter.ClassifiedPatterns{
+			Read:   patternStrings(sections.Read),
+			Edit:   patternStrings(sections.Edit),
+			Delete: patternStrings(sections.Delete),
+		},
 	}
+	plan.RawPatterns = make([]string, 0, len(plan.Rules.Read)+len(plan.Rules.Edit)+len(plan.Rules.Delete))
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Read...)
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Edit...)
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Delete...)
+
 	files, err := a.Generate(plan)
 	if err != nil {
 		return fmt.Errorf("适配器 %s 生成失败: %w", adapterID, err)

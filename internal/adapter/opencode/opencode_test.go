@@ -59,7 +59,8 @@ func TestAdapter_Detect(t *testing.T) {
 }
 
 // TestAdapter_InstallInstructions 验证安装说明诚实标注限制：
-// 走 config deny 路径、提示 permission.ask hook 当前不触发（issue #7006）。
+// 走 config deny 路径、提示 permission.ask hook 当前不触发（issue #7006）、
+// 如实声明 edit 段已覆盖、delete 段不支持。
 func TestAdapter_InstallInstructions(t *testing.T) {
 	a := Adapter{}
 	instr := a.InstallInstructions()
@@ -69,17 +70,22 @@ func TestAdapter_InstallInstructions(t *testing.T) {
 	assert.Contains(t, instr, "config")
 	// 诚实标注：permission.ask hook 不触发的已知限制。
 	assert.Contains(t, instr, "permission.ask")
+	// 声明覆盖 edit 段（permission.edit）。
+	assert.Contains(t, instr, "edit")
+	// 诚实标注：delete 段不支持。
+	assert.Contains(t, instr, "delete")
 }
 
 // TestAdapter_Generate 生成单文件 opencode.json，含 permission.read deny 规则，
-// JSON 语法必须合法（json.Unmarshal 验证）且把 RawPatterns 如数翻译成 deny glob。
+// JSON 语法必须合法（json.Unmarshal 验证）且把 Rules.Read 如数翻译成 deny glob。
+// edit 段也必须存在（无 edit 规则时为空 {}），delete 段不产出。
 func TestAdapter_Generate(t *testing.T) {
 	a := Adapter{}
 	patterns := []string{".env", "*.pem", "**/id_rsa", "secrets/"}
 	files, err := a.Generate(adapter.Plan{
 		RepoRoot:     "/some/repo",
 		MatchedPaths: []string{".env", "deploy/key.pem"},
-		RawPatterns:  patterns,
+		Rules:        adapter.ClassifiedPatterns{Read: patterns},
 	})
 	require.NoError(t, err)
 	require.Len(t, files, 1, "opencode adapter produces exactly one opencode.json")
@@ -100,19 +106,27 @@ func TestAdapter_Generate(t *testing.T) {
 	perm, ok := doc["permission"].(map[string]any)
 	require.True(t, ok, "permission key must be an object")
 
-	// permission.read 是个 map[glob]string，每条 RawPattern 对应一条 deny。
+	// permission.read 是个 map[glob]string，每条 Read pattern 对应一条 deny。
 	read, ok := perm["read"].(map[string]any)
 	require.True(t, ok, "permission.read must be an object (glob → decision)")
 
-	// 每条 RawPattern 都应映射到 "deny"。
+	// 每条 Read pattern 都应映射到 "deny"。
 	for _, p := range patterns {
 		v, present := read[p]
 		require.True(t, present, "pattern %q must appear as a key in permission.read", p)
 		assert.Equal(t, "deny", v, "pattern %q must map to \"deny\"", p)
 	}
 
-	// 不应额外塞入未声明的工具（edit/webfetch/bash 等），保持最小集。
-	assert.Len(t, perm, 1, "permission should only contain read key")
+	// permission.edit 段必须存在（即便无 edit 规则也保留空 map，保证段可解析）。
+	edit, ok := perm["edit"].(map[string]any)
+	require.True(t, ok, "permission.edit must be an object even when empty")
+	assert.Empty(t, edit, "no edit rules supplied → edit map must be empty")
+
+	// 不应额外塞入未声明的工具段（bash/webfetch/glob 等），保持 read+edit 最小集；
+	// 特别地，不得产出 delete 段（opencode 无该权限分类）。
+	assert.Len(t, perm, 2, "permission should contain exactly read + edit keys")
+	_, hasDelete := perm["delete"]
+	assert.False(t, hasDelete, "opencode has no delete permission category; must not emit one")
 }
 
 // TestAdapter_Generate_SkipsCommentAndBlank 确认 Generate 过滤掉注释行与空行，
@@ -120,7 +134,7 @@ func TestAdapter_Generate(t *testing.T) {
 func TestAdapter_Generate_SkipsCommentAndBlank(t *testing.T) {
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{
-		RawPatterns: []string{".env", "# a comment", "  ", "*.pem", ""},
+		Rules: adapter.ClassifiedPatterns{Read: []string{".env", "# a comment", "  ", "*.pem", ""}},
 	})
 	require.NoError(t, err)
 	require.Len(t, files, 1)
@@ -137,10 +151,10 @@ func TestAdapter_Generate_SkipsCommentAndBlank(t *testing.T) {
 	assert.False(t, hasHash)
 }
 
-// TestAdapter_Generate_EmptyPatterns 仍产出合法 JSON（空 read map）。
+// TestAdapter_Generate_EmptyPatterns 仍产出合法 JSON（空 read + edit map）。
 func TestAdapter_Generate_EmptyPatterns(t *testing.T) {
 	a := Adapter{}
-	files, err := a.Generate(adapter.Plan{RawPatterns: nil})
+	files, err := a.Generate(adapter.Plan{})
 	require.NoError(t, err)
 	require.Len(t, files, 1)
 
@@ -151,17 +165,20 @@ func TestAdapter_Generate_EmptyPatterns(t *testing.T) {
 	read, ok := perm["read"].(map[string]any)
 	require.True(t, ok)
 	assert.Empty(t, read)
+	edit, ok := perm["edit"].(map[string]any)
+	require.True(t, ok)
+	assert.Empty(t, edit)
 }
 
 // TestAdapter_Generate_RepoRootAgnostic Generate 产出的文件路径不依赖 RepoRoot
 // （恒为 opencode.json），交给调用方按 RepoRoot 拼绝对路径。
 func TestAdapter_Generate_RepoRootAgnostic(t *testing.T) {
 	a := Adapter{}
-	files, err := a.Generate(adapter.Plan{RepoRoot: "/x/y", RawPatterns: []string{".env"}})
+	files, err := a.Generate(adapter.Plan{RepoRoot: "/x/y", Rules: adapter.ClassifiedPatterns{Read: []string{".env"}}})
 	require.NoError(t, err)
 	assert.Equal(t, "opencode.json", files[0].Path)
 
-	files2, err := a.Generate(adapter.Plan{RepoRoot: "/totally/different", RawPatterns: []string{".env"}})
+	files2, err := a.Generate(adapter.Plan{RepoRoot: "/totally/different", Rules: adapter.ClassifiedPatterns{Read: []string{".env"}}})
 	require.NoError(t, err)
 	assert.Equal(t, "opencode.json", files2[0].Path)
 }
@@ -175,7 +192,7 @@ func TestAdapter_Generate_NegationBecomesAllow(t *testing.T) {
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{
 		// 典型用例：deny 全部 .env / .env.*，但放行示例文件 .env.example。
-		RawPatterns: []string{".env", ".env.*", "!.env.example"},
+		Rules: adapter.ClassifiedPatterns{Read: []string{".env", ".env.*", "!.env.example"}},
 	})
 	require.NoError(t, err)
 
@@ -202,11 +219,11 @@ func TestAdapter_Generate_NegationBecomesAllow(t *testing.T) {
 func TestAdapter_Generate_NegationBecomesAllow_MultipleCases(t *testing.T) {
 	a := Adapter{}
 	files, err := a.Generate(adapter.Plan{
-		RawPatterns: []string{
+		Rules: adapter.ClassifiedPatterns{Read: []string{
 			"*.env",
 			"!.env.sample",       // basename 取反
 			"!deploy/secret.pem", // 子目录路径取反
-		},
+		}},
 	})
 	require.NoError(t, err)
 
@@ -225,6 +242,60 @@ func TestAdapter_Generate_NegationBecomesAllow_MultipleCases(t *testing.T) {
 		assert.False(t, strings.HasPrefix(k, "!"),
 			"key %q still has leading '!'; opencode glob has no negation", k)
 	}
+}
+
+// TestAdapter_Generate_EditSegment 验证 [edit] 段规则被写进 permission.edit（阻断改写），
+// 而非泄漏进 permission.read（edit-only 文件不应被错误挡读）。取反语义在 edit 段同样生效。
+// 同时验证 read+edit 段独立分桶：同一条 pattern 出现在两段时两段各有一条。
+func TestAdapter_Generate_EditSegment(t *testing.T) {
+	a := Adapter{}
+	files, err := a.Generate(adapter.Plan{
+		Rules: adapter.ClassifiedPatterns{
+			Read: []string{".env", ".env.*", "!.env.example"},
+			Edit: []string{"secrets/*.key", "*.pem", "!public/*.pem"},
+		},
+	})
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal([]byte(files[0].Content), &doc))
+	perm := doc["permission"].(map[string]any)
+	read := perm["read"].(map[string]any)
+	edit := perm["edit"].(map[string]any)
+
+	// read 段只含 Read-segment 规则；edit-segment 规则不应泄漏进 read。
+	assert.Equal(t, "deny", read[".env"])
+	assert.Equal(t, "deny", read[".env.*"])
+	assert.Equal(t, "allow", read[".env.example"])
+	_, editPatternInRead := read["secrets/*.key"]
+	assert.False(t, editPatternInRead, "edit-segment rule must not leak into permission.read")
+
+	// edit 段：普通行 → deny，取反行 → allow（与 read 段同构）。
+	assert.Equal(t, "deny", edit["secrets/*.key"], "edit plain pattern → deny")
+	assert.Equal(t, "deny", edit["*.pem"], "edit plain pattern → deny")
+	assert.Equal(t, "allow", edit["public/*.pem"], "edit negation → allow")
+	// ! 前缀必须剥干净。
+	_, hasBang := edit["!public/*.pem"]
+	assert.False(t, hasBang, "literal '!pattern' must not leak into permission.edit")
+}
+
+// TestAdapter_Generate_ReadEditOverlap 验证同一条 pattern 同时出现在 read 与 edit 段时，
+// 两段各自独立写入（read 挡读 + edit 挡改写），不互相覆盖。
+func TestAdapter_Generate_ReadEditOverlap(t *testing.T) {
+	a := Adapter{}
+	files, err := a.Generate(adapter.Plan{
+		Rules: adapter.ClassifiedPatterns{
+			Read: []string{".env"},
+			Edit: []string{".env"},
+		},
+	})
+	require.NoError(t, err)
+
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal([]byte(files[0].Content), &doc))
+	perm := doc["permission"].(map[string]any)
+	assert.Equal(t, "deny", perm["read"].(map[string]any)[".env"], "read overlap → deny")
+	assert.Equal(t, "deny", perm["edit"].(map[string]any)[".env"], "edit overlap → deny")
 }
 
 // TestStripNegation 直接锁定 stripNegation 的返回契约（含 !!foo 这条易被误读的边界）。

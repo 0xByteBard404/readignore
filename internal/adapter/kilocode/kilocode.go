@@ -1,13 +1,18 @@
 // Package kilocode 实现 kilocode 适配器：把 .readignore 翻译成 kilo.json 的
-// permission 配置，在 kilocode 加载时按 glob deny 文件读取。
+// permission 配置，在 kilocode 加载时按 glob deny 文件读取/改写。
 //
-// kilocode（kilo.ai，开源 MIT，OpenCode fork）的 permission 系统与 opencode 一脉相承：
-// permission.read 采用「glob → allow/deny」模型，直接控制文件读取工具。
-// 故本适配器把 plan.RawPatterns 逐条翻译成 permission.read 的 glob 键：
-//   - 普通 pattern（deny）原样写入并标记 "deny"；
-//   - 取反行（!pattern，readignore 语义为「放行」）剥掉前导 ! 后写入 actual
-//     pattern 并标记 "allow"，依赖 kilocode「更具体 glob 覆盖更宽泛」的机制
-//     实现放行（如 .env.example 比 .env.* 更具体，allow 胜出）。
+// kilocode（kilo.ai，开源 MIT，OpenCode fork；Kilo-Org/kilocode monorepo 内
+// packages/opencode 即该 fork）的 permission 系统与 opencode 一脉相承：permission
+// 暴露 read 与 edit 两个 glob→allow/deny 段（kilocode 自身 test/kilocode/config-injector.test.ts
+// 与 ignore-migrator.test.ts 均断言 permission.read / permission.edit 为 Record<string,string>）。
+// 这与 readignore 的 read/edit 分段天然吻合：
+//
+//   - plan.Rules.Read → permission.read：普通 pattern 标 "deny"，取反行（!pattern，
+//     readignore 语义为「放行」）剥掉前导 ! 后标 "allow"，依赖 kilocode「更具体 glob
+//     覆盖更宽泛」的机制实现放行；
+//   - plan.Rules.Edit → permission.edit：同上翻译，阻断对 edit 段声明文件的改写；
+//   - plan.Rules.Delete → 不支持（kilocode/opencode fork 同样无 delete 权限段；
+//     删文件走 bash permission，属不同机制，本适配器不覆盖，InstallInstructions 如实标注）。
 //
 // 产出单文件 kilo.json（kilocode 项目级配置）。
 //
@@ -19,7 +24,7 @@
 //
 // glob 语法差异：kilocode 的 wildcard 是简单 glob（`*`→`.*`、`?`→`.`，全匹配），
 // **不支持 `**` 目录穿越**。含 `**/` 的 pattern（如 `**/id_rsa`）需剥 `**/` 前缀
-// 降级为 basename 匹配（`id_rsa`）。这与 opencode 适配器的处理策略一致。
+// 降级为 basename 匹配（`id_rsa`）。read 段与 edit 段共用此降级。
 //
 // 强度声明（诚实标注）：kilocode 当前有 permission deny 配置，且有 hardRuleset +
 // ReadPermission.harden 机制（甚至已对 *.env 做了 hardening 先例）。但：
@@ -89,12 +94,16 @@ func (Adapter) Detect(repoRoot string) bool {
 }
 
 // InstallInstructions 给出人类可读说明，并诚实标注当前限制：
+//   - 覆盖 read 段（permission.read）与 edit 段（permission.edit）；delete 段不支持
+//     （kilocode 无 delete 权限分类，删文件走 bash permission，属不同机制，本适配器不覆盖）；
 //   - config 强度（非 hard），有已知 deny 绕过 bug（#8293、#11637）；
 //   - glob 无 gitignore 取反/顺序语义，用「更具体 allow 覆盖宽泛 deny」近似；
 //   - glob 不支持 **，含 ** 的 pattern 已降级为 basename 匹配；
 //   - shell 命令（cat .env）走 bash permission，不经过 read permission。
 func (Adapter) InstallInstructions() string {
-	return "已生成 kilo.json（permission.read deny/allow）。kilocode 启动时自动读取该配置并按 glob 决定文件读取。" +
+	return "已生成 kilo.json（permission.read + permission.edit deny/allow）。kilocode 启动时自动读取该配置并按 glob 决定文件读取/改写。" +
+		"覆盖范围：read 段（permission.read 阻断读取）+ edit 段（permission.edit 阻断改写）。delete 段不支持" +
+		"（kilocode 无 delete 权限分类，删文件走 bash permission，属不同机制，本适配器不覆盖）。" +
 		"注意：本适配器强度为 config（非 hard）——kilocode 有已知 deny 绕过 bug（GitHub #8293、#11637），" +
 		"防护依赖 kilocode 忠实加载配置。" +
 		"另：kilocode glob 不支持 **（含 ** 的 pattern 已降级为 basename 匹配）、无 gitignore 取反/顺序语义；" +
@@ -102,17 +111,25 @@ func (Adapter) InstallInstructions() string {
 		"依赖严格语义请用 claudecode 适配器。"
 }
 
-// Generate 依据 plan 产出单个 kilo.json：把 plan.RawPatterns 逐条翻译成
-// permission.read 的 glob→decision 键。
+// Generate 依据 plan 产出单个 kilo.json：把 plan.Rules.Read 与 plan.Rules.Edit
+// 分别翻译成 permission.read / permission.edit 的 glob→decision 键。
 //
 //   - 普通行（如 ".env"）写入 read[".env"] = "deny"；
 //   - 取反行（如 "!.env.example"）剥 ! 后写入 read[".env.example"] = "allow"；
 //   - 含 **/ 前缀的 pattern（如 "**/id_rsa"）剥 **/ 后降级为 basename（"id_rsa"）。
 //
-// 产出形态（示例，RawPatterns=[".env",".env.*","!.env.example","**/id_rsa"]）：
+// edit 段（plan.Rules.Edit → permission.edit）同上翻译（含 stripStarStar 降级）。
+// 分段读取（而非全集 RawPatterns）：kilocode permission 区分 read 与 edit 工具，
+// [edit] 段声明的 pattern 应只阻断改写、不阻断读取。对无段头的 .readignore
+// （裸 pattern 全归 Read 段），行为与历史一致。
+//
+// 产出形态（示例，Rules.Read=[".env",".env.*","!.env.example","**/id_rsa"], Rules.Edit=["secrets/*.key"]）：
 //
 //	{
 //	  "permission": {
+//	    "edit": {
+//	      "secrets/*.key": "deny"
+//	    },
 //	    "read": {
 //	      ".env": "deny",
 //	      ".env.*": "deny",
@@ -122,20 +139,13 @@ func (Adapter) InstallInstructions() string {
 //	  }
 //	}
 func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
-	patterns := sanitizePatterns(plan.RawPatterns)
-
-	read := make(map[string]string, len(patterns))
-	for _, p := range patterns {
-		if actual, ok := stripNegation(p); ok {
-			read[stripStarStar(actual)] = "allow"
-			continue
-		}
-		read[stripStarStar(p)] = "deny"
-	}
+	read := buildDecisionMap(plan.Rules.Read)
+	edit := buildDecisionMap(plan.Rules.Edit)
 
 	doc := map[string]any{
 		"permission": map[string]any{
 			"read": read,
+			"edit": edit,
 		},
 	}
 
@@ -149,6 +159,25 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 		Content: string(buf),
 		Mode:    0,
 	}}, nil
+}
+
+// buildDecisionMap 把一段原始 pattern 行翻译成 kilocode 的 glob→decision map：
+//   - 去注释/空行（sanitizePatterns）；
+//   - 普通行 → "deny"；取反行（!pattern，readignore 语义为放行）剥 ! 后 → "allow"；
+//   - 含 **/ 前缀的 pattern 剥 **/ 降级为 basename（kilocode wildcard 不支持 ** 目录穿越）。
+//
+// read 段与 edit 段共用此翻译逻辑（两段在 kilocode 侧的 glob→decision 形态一致）。
+func buildDecisionMap(raw []string) map[string]string {
+	patterns := sanitizePatterns(raw)
+	m := make(map[string]string, len(patterns))
+	for _, p := range patterns {
+		if actual, ok := stripNegation(p); ok {
+			m[stripStarStar(actual)] = "allow"
+			continue
+		}
+		m[stripStarStar(p)] = "deny"
+	}
+	return m
 }
 
 // sanitizePatterns 规整待翻译的 patterns：去空白行与注释行。

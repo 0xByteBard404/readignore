@@ -41,6 +41,42 @@ func TestGenerate_Opencode(t *testing.T) {
 	assert.Contains(t, out, ".env.example")
 }
 
+// generate opencode with [edit] section: stdout 含 permission.read + permission.edit 的 deny/allow 配置，
+// edit 段规则进 permission.edit、不泄漏进 permission.read。这是 Task5 的分段 E2E 校验。
+func TestGenerate_Opencode_EditSegment(t *testing.T) {
+	chdirTemp(t)
+	writeFile(t, ".", ".readignore", ".env\n[edit]\nsecrets/*.key\n!public/sample.key\n")
+
+	out, err := runCmd(t, []string{"generate", "opencode"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "opencode.json")
+	// read 段：.env deny。
+	assert.Contains(t, out, `".env": "deny"`)
+	// edit 段：secrets/*.key deny、取反 public/sample.key allow。
+	assert.Contains(t, out, `"secrets/*.key": "deny"`)
+	assert.Contains(t, out, `"public/sample.key": "allow"`)
+	// edit 段规则不应泄漏成 read 段 deny（.env 是唯一 read deny）。
+	assert.Contains(t, out, `"edit"`)
+	assert.Contains(t, out, `"read"`)
+}
+
+// generate kilocode with [edit] section: 同 opencode，edit 段进 permission.edit（含 ** 降级）。
+func TestGenerate_Kilocode_EditSegment(t *testing.T) {
+	chdirTemp(t)
+	writeFile(t, ".", ".readignore", ".env\n[edit]\n**/id_rsa\nsecrets/*.key\n")
+
+	out, err := runCmd(t, []string{"generate", "kilocode"})
+	require.NoError(t, err)
+	assert.Contains(t, out, "kilo.json")
+	// read 段。
+	assert.Contains(t, out, `".env": "deny"`)
+	// edit 段：**/id_rsa 降级为 basename id_rsa、secrets/*.key deny。
+	assert.Contains(t, out, `"id_rsa": "deny"`)
+	assert.Contains(t, out, `"secrets/*.key": "deny"`)
+	assert.NotContains(t, out, `**`)
+	assert.Contains(t, out, `"edit"`)
+}
+
 // .readignore 不存在时 generate 报错（提示先 init）。
 func TestGenerate_NoReadignore_Errors(t *testing.T) {
 	chdirTemp(t)
