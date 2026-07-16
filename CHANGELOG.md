@@ -14,6 +14,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- 下次发版在此添加 -->
 
+## [0.6.0] - 2026-07-16
+
+Two major features: **sectioned file permissions** (`[read]`/`[edit]`/`[delete]`) and **npm single-package with bundled binaries** (drop postinstall, allow-scripts-safe).
+
+两大功能：**分段式文件权限**（`[read]`/`[edit]`/`[delete]`）+ **npm 单包含全平台 binary**（移除 postinstall，allow-scripts 无关）。
+
+### Added / 新增
+
+- **Sectioned file permissions** (`[read]`/`[edit]`/`[delete]`): one `.readignore` now segments
+  into three permission sections — unreadable / read-only / no-delete. Claude Code & codex
+  intercept `Edit`/`Write`/`NotebookEdit` tools (via `notebook_path`) + Bash `rm`
+  (`parseDeletePaths`). opencode/kilo get `permission.edit`; pi honestly labeled unsupported.
+  Bare patterns default to `[read]` (zero-breaking read path). `[delete]` is best-effort.
+  — **分段式文件权限**：一份 `.readignore` 分三段——不可读 / 只读不可改 / 不可删。Claude Code
+    与 codex 拦截 `Edit`/`Write`/`NotebookEdit`（取 `notebook_path`）+ Bash `rm`
+    （`parseDeletePaths`）。opencode/kilo 获得 `permission.edit`；pi 诚实标注 unsupported。
+    裸 pattern 默认归 `[read]`（读路径零 breaking）。`[delete]` 为 best-effort。
+- **npm single-package bundles all platform binaries** (`npm/bin.js` + `npm/bin/<platform>/`):
+  the npm package now ships all 5 platform prebuilt binaries (~7MB) inside the package.
+  No `postinstall` download, no `allow-scripts` dependency — 100% reliable on default npm config.
+  — **npm 单包含全平台 binary**：npm 包内含 5 平台 prebuilt binary（~7MB）。无 postinstall 下载、
+    无 `allow-scripts` 依赖——默认 npm 配置下 100% 可靠。
+
 ### Changed / 变更
 
 - **Bare patterns also block write-class Bash commands that read the source**
@@ -371,7 +394,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.6.0
 [0.5.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.4.0
 [0.3.3]: https://github.com/0xByteBard404/readignore/releases/tag/v0.3.3
