@@ -47,6 +47,14 @@ type GeneratedFile struct {
 	Mode uint32
 }
 
+// ClassifiedPatterns 是按权限分类的原始规则（供 opencode/kilo 等需要把规则
+// 写进配置文件的 adapter 使用）。每段 = ParseSections 对应段的原始 pattern 行。
+type ClassifiedPatterns struct {
+	Read   []string
+	Edit   []string
+	Delete []string
+}
+
 // Plan 是传递给 Adapter.Generate 的输入：把 .readignore 的解析结果与
 // 仓库上下文打包，供适配器据此生成各工具原生防护配置。
 type Plan struct {
@@ -60,7 +68,14 @@ type Plan struct {
 	MatchedPaths []string
 	// RawPatterns .readignore 的原始规则行（已去注释/空行，保留取反行）。
 	// 适配器生成各工具原生防护配置时应直接引用本字段，而非再次猜测用户书写。
+	// 语义：Read+Edit+Delete 全集（保持单一事实源；历史 adapter 仅消费 Read 段时
+	// 与 Rules.Read 等价，故保持全集不破坏既有行为）。
 	RawPatterns []string
+	// Rules 是按权限分类的分段原始规则（readignore.ParseSections 的三段产物）。
+	// 需要把规则分别写进配置文件不同字段段的 adapter（如 opencode permissions、
+	// kilocode）应读 Rules 而非 RawPatterns；只关心「全集 deny」的 adapter（如
+	// claudecode 的 hook）继续用 RawPatterns 即可。
+	Rules ClassifiedPatterns
 }
 
 // Adapter 是「工具适配器」抽象：把 .readignore 规则翻译成某个 AI coding agent

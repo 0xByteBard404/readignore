@@ -92,14 +92,26 @@ func runInstall(out io.Writer, args []string, all, force bool) error {
 		targets = []adapter.Adapter{a}
 	}
 
-	rawPatterns, err := loadPatterns(repoRoot)
+	sections, err := loadSections(repoRoot)
 	if err != nil {
 		return err
 	}
+	// 用 ParseSections 的三段产物填 Plan.Rules；RawPatterns 取全集（Read+Edit+Delete）
+	// 保持单一事实源语义——只消费「全集 deny」的 adapter（如 claudecode hook）行为不变，
+	// 需要分段的 adapter（opencode/kilocode）改读 Rules。
 	plan := adapter.Plan{
-		RepoRoot:    repoRoot,
-		RawPatterns: rawPatterns,
+		RepoRoot: repoRoot,
+		Rules: adapter.ClassifiedPatterns{
+			Read:   patternStrings(sections.Read),
+			Edit:   patternStrings(sections.Edit),
+			Delete: patternStrings(sections.Delete),
+		},
 	}
+	// RawPatterns = 全集（Read+Edit+Delete）。显式独立分配，避免与 Rules.Read 共享底层数组。
+	plan.RawPatterns = make([]string, 0, len(plan.Rules.Read)+len(plan.Rules.Edit)+len(plan.Rules.Delete))
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Read...)
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Edit...)
+	plan.RawPatterns = append(plan.RawPatterns, plan.Rules.Delete...)
 
 	var aggErr error
 	for _, a := range targets {
