@@ -14,12 +14,12 @@ import (
 // 设计目标：覆盖常见敏感文件类别（环境变量、密钥、凭据、IDE/系统杂物），
 // 每类带简短注释解释为何忽略；用户可直接增删。模板用 gitignore 语法，
 // 保证 readignore.Parse 与各适配器都能正确处理。
-const templateReadignore = `# readignore —— AI coding agent 防护规则（gitignore 语法）
-# 列在此处的文件/目录将被适配器翻译成各 AI agent（Claude Code、opencode 等）
-# 的防护配置，阻止 agent 读取或泄露这些敏感路径。
-#
+const templateReadignore = `# readignore —— AI coding agent 文件权限（gitignore 语法，分段）
 # 语法与 .gitignore 一致：# 注释；! 取反（放行）；** 跨任意层级；尾 / 锚定目录。
+# 段头 [read]/[edit]/[delete] 把后续规则归到对应权限；未列出 = 允许。
+# 无段头的裸 pattern 默认归 [read]（向后兼容）。
 
+[read]            # 不可读（防泄露）
 # --- 环境变量 / 密钥文件 ---
 .env
 .env.*
@@ -50,15 +50,21 @@ service-account*.json
 .netrc
 *.token
 
-# --- IDE / 系统杂物（非敏感但通常不应进 agent 上下文） ---
-.DS_Store
-Thumbs.db
-.idea/
-.vscode/
-
-# --- 示例：取反放行（脱敏的示例文件允许 agent 读取） ---
+# --- 取反放行（脱敏示例可读） ---
 !.env.example
-# !credentials.example.json
+
+[edit]            # 可读，不可编辑（防 agent 改坏）
+# --- lock 文件 / 生成产物（改了易破坏依赖 / 重建） ---
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+go.sum
+
+[delete]          # 不可删除（best-effort，仅拦字面 rm）
+# --- 关键目录（误删致命） ---
+.git/
+src/
+docs/
 `
 
 // newInitCmd 构造 `readignore init` 子命令：在仓库根生成 .readignore 模板。
