@@ -316,7 +316,7 @@ func TestGenerate_FileArtifacts_Static(t *testing.T) {
 		assert.Equal(t, uint32(0), f.Mode, "settings.json: caller uses default")
 		// 解析为合法 JSON 并断言结构。
 		assert.Contains(t, f.Content, `"PreToolUse"`)
-		assert.Contains(t, f.Content, `"Read|Grep|Glob|Bash"`)
+		assert.Contains(t, f.Content, `"Read|Grep|Glob|Bash|Edit|Write|NotebookEdit"`)
 		assert.Contains(t, f.Content, "readignore.sh")
 		assert.Contains(t, f.Content, `"timeout"`)
 	})

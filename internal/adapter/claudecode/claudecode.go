@@ -102,7 +102,7 @@ func settingsJSON() string {
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Read|Grep|Glob|Bash",
+        "matcher": "Read|Grep|Glob|Bash|Edit|Write|NotebookEdit",
         "hooks": [
           {
             "type": "command",
