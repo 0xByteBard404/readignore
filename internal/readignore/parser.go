@@ -113,6 +113,12 @@ type Sections struct {
 
 var sectionHeaderRe = regexp.MustCompile(`(?i)^\[(read|edit|delete)\]\s*(#.*)?$`)
 
+// unknownSectionRe 收紧「未知段头」判定为「整行是 [word]」（可选尾随注释 # ...）。
+// 旧启发式 "HasPrefix [ 且 Contains ]" 过宽：把合法 gitignore 行首字符类 pattern
+// （如 [abc].txt、[0-9].log、[!ab].env）误判为未知段头并丢弃 → 静默数据丢失。
+// 此正则要求 [ 之后到第一个 ] 之间无 ]，且 ] 后只剩空白/注释，从而放过 [abc].txt 这类。
+var unknownSectionRe = regexp.MustCompile(`^\[[^\]]+\]\s*(#.*)?$`)
+
 // ParseSections 解析含段头的 .readignore，返回三段 matcher。
 // 段头前/无段头的裸 pattern 归 Read（向后兼容）。
 // 未知段头（如 [write]）→ stderr 警告 + 该段 pattern 忽略（不进任何段）。
@@ -148,8 +154,8 @@ func ParseSections(content string) (*Sections, error) {
 			discard = false // 已知段头，恢复收集
 			continue
 		}
-		// 未知段头（[xxx] 但不是 read/edit/delete）
-		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+		// 未知段头（整行 [xxx] 但不是 read/edit/delete）
+		if unknownSectionRe.MatchString(trimmed) {
 			fmt.Fprintf(os.Stderr, "readignore: warning: unknown section %s, ignored\n", trimmed)
 			discard = true
 			continue

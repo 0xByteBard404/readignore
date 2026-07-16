@@ -221,6 +221,16 @@ func TestParseSections_SamePatternMultipleSections(t *testing.T) {
 	assert.False(t, s.Edit.Matches(".env"))
 }
 
+func TestParseSections_LeadingCharClass(t *testing.T) {
+	// 行首字符类 [abc].txt 是合法 gitignore pattern，不应被误判为段头并丢弃。
+	// 复现旧 bug：parser 用 "含 [ 且含 ]" 启发式判未知段头，把 [abc].txt 当段头丢掉。
+	s, err := ParseSections("[read]\n[abc].txt\n")
+	require.NoError(t, err)
+	assert.True(t, s.Read.Matches("a.txt"), "[abc].txt 应命中 a.txt（字符类，非段头）")
+	assert.True(t, s.Read.Matches("b.txt"))
+	assert.False(t, s.Read.Matches("d.txt"))
+}
+
 func TestParseSections_UnknownSection(t *testing.T) {
 	// 未知段头 → stderr 警告 + 忽略该段（不进任何段）
 	s, err := ParseSections("[read]\n.env\n[write]\nfoo.txt\n[edit]\nbar.txt\n")
