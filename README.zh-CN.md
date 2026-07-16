@@ -146,7 +146,7 @@ readignore match .env
 
 ## `.readignore` 语法
 
-100% 兼容 gitignore，零学习成本：
+100% 兼容 gitignore，零学习成本。分段为 `[read]`（不可读）/ `[edit]`（只读不可改）/ `[delete]`（不可删）——无段头的裸 pattern 默认归 `[read]`（向后兼容）。`[delete]` 为 best-effort（仅拦字面 `rm`/`rmdir`；`rm $F` / `find -delete` 绕过静态分析——真不可删请配合 `chattr +i`）：
 
 ```gitignore
 # readignore —— 本仓库 AI 智能体禁止读取的文件

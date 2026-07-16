@@ -152,7 +152,7 @@ manually) unless you pass `--force`. This avoids clobbering your existing
 
 ## `.readignore` syntax
 
-100% gitignore-compatible. Zero learning curve:
+100% gitignore-compatible. Zero learning curve. Segment into `[read]` (unreadable) / `[edit]` (read-only) / `[delete]` (no delete) sections — bare patterns default to `[read]` (backward compatible). `[delete]` is best-effort (only literal `rm`/`rmdir` intercepted; `rm $F` / `find -delete` bypass static analysis — combine with `chattr +i` for true undeletable):
 
 ```gitignore
 # readignore — files this repo's AI agent must not read
