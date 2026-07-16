@@ -55,9 +55,9 @@ func TestRunHookCheck(t *testing.T) {
 		{"Bash cat sub/dir/id_rsa (深层 **)", `{"tool_name":"Bash","tool_input":{"command":"cat sub/dir/id_rsa"}}`, true},
 		// DENY：不同读法（不止 cat —— head/cp/tar 等都该拦 .env token）
 		{"Bash head .env", `{"tool_name":"Bash","tool_input":{"command":"head .env"}}`, true},
-		// cp 归 Edit 段（写目的端）。本夹具是裸 pattern（无段头）→ 只进 Read 段，
-		// Edit 段为空 → 不拦。体现分段语义：裸 .readignore 只护 Read；要拦 cp 须 [edit]。
-		{"Bash cp .env /tmp/x (复制, 裸规则只护 Read)", `{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`, false},
+		// cp 归 OpEdit，但写类动词读源文件（cp .env 读 .env 源）→ OpEdit 额外查 Read 段
+		// 守泄露。本夹具是裸 pattern（无段头）→ .env 进 Read 段 → 拦（不再静默放行泄露）。
+		{"Bash cp .env /tmp/x (复制读源, OpEdit 查 Read 守泄露)", `{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`, true},
 		{"Bash tar czf x.tgz .env (打包)", `{"tool_name":"Bash","tool_input":{"command":"tar czf x.tgz .env"}}`, true},
 		{"Bash cat .env secret.pem (多敏感 token)", `{"tool_name":"Bash","tool_input":{"command":"cat .env secret.pem"}}`, true},
 
@@ -168,4 +168,16 @@ func TestParseDeletePaths(t *testing.T) {
 	assert.Equal(t, []string{"src"}, parseDeletePaths("rm -rf src"))
 	assert.Equal(t, []string{"a", "b", "c"}, parseDeletePaths("rm a b c"))
 	assert.Equal(t, []string{"-weird"}, parseDeletePaths("rm -- -weird"))
+}
+
+// I1 修复：裸 pattern（无 [edit] 段）+ cp .env /tmp → 应 DENY。
+// cp 是写类动词但读源文件（cp .env 读 .env 源），OpEdit 额外查 Read 段守泄露——
+// 否则裸 .readignore（只进 Read 段、Edit 段空）下 cp .env 会静默放行（源泄露）。
+func TestRunHookCheck_BashCp_ReadSectionDeny(t *testing.T) {
+	dir := chdirTemp(t)
+	writeFile(t, dir, ".readignore", ".env\n") // 裸 pattern 归 [read]，无 [edit] 段
+	in := strings.NewReader(`{"tool_name":"Bash","tool_input":{"command":"cp .env /tmp/x"}}`)
+	var out bytes.Buffer
+	require.NoError(t, runHookCheck(in, &out))
+	assert.Contains(t, out.String(), "permissionDecision") // DENY（cp 读源 .env 在 Read 段）
 }

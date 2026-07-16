@@ -86,6 +86,11 @@ func runHookCheck(in io.Reader, out io.Writer) error {
 
 	// 按 tool_name 路由到对应段（read/edit/delete），各段独立匹配。
 	// Matches 内部已规范化 Windows 反斜杠 → 正斜杠（parser.go），直接传路径即可。
+	//
+	// OpEdit 额外查 Read 段：写类 Bash 动词（cp/mv/tee/sed -i/重定向）在写目的端前
+	// 会「读源文件」（如 cp .env 读 .env 源）。裸 pattern（无段头）只进 Read 段、Edit 段
+	// 为空——若 OpEdit 只查 Edit 段，cp .env 会放行（源 .env 泄露）。补查 Read 段守泄露。
+	// rm 不在此列：rm 删除不读源；[delete] 段护删是段独立设计（rm .env 需用户加 [delete]）。
 	op, paths := routeToolInput(input.ToolName, input.ToolInput)
 	switch op {
 	case readignore.OpRead:
@@ -94,7 +99,7 @@ func runHookCheck(in io.Reader, out io.Writer) error {
 			return nil
 		}
 	case readignore.OpEdit:
-		if matchAny(sections.Edit, paths) {
+		if matchAny(sections.Edit, paths) || matchAny(sections.Read, paths) {
 			writeOut(out, hookCheckDenyJSON)
 			return nil
 		}

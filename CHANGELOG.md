@@ -14,6 +14,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- 下次发版在此添加 -->
 
+### Changed / 变更
+
+- **Bare patterns also block write-class Bash commands that read the source**
+  (`internal/cli/hookcheck.go`): a `.readignore` with no section headers puts every
+  pattern into `[read]`. Write-class Bash verbs (`cp`/`mv`/`tee`/`sed -i`/`>` redirect)
+  are classified as `OpEdit`, but they **read the source file** before writing
+  (e.g. `cp .env /tmp` reads `.env`). Previously the `OpEdit` branch only checked the
+  `[edit]` section, which is empty for bare patterns — so `cp .env` was silently
+  allowed (source leak, a regression from the v0.5.0 single-section behavior). The
+  `OpEdit` branch now also checks the `[read]` section to preserve leak protection.
+  `rm`/delete is unaffected: deletion does not read the source, and protecting a file
+  from deletion still requires an explicit `[delete]` section (section-independent design).
+  — **裸 pattern 同时拦「读源的写类 Bash 命令」**（`internal/cli/hookcheck.go`）：无段头的
+    `.readignore` 把所有 pattern 归入 `[read]`。写类 Bash 动词（`cp`/`mv`/`tee`/`sed -i`/`>`
+    重定向）归 `OpEdit`，但它们在写目的端前会**读源文件**（如 `cp .env /tmp` 读 `.env`）。
+    此前 `OpEdit` 分支只查 `[edit]` 段——裸 pattern 的 `[edit]` 段为空，`cp .env` 被静默放行
+    （源泄露，相比 v0.5.0 单段行为属回归）。`OpEdit` 分支现补查 `[read]` 段以守泄露。
+    `rm`/delete 不受影响：删除不读源；护删仍需显式 `[delete]` 段（段独立设计）。
+
 ## [0.5.0] - 2026-07-15
 
 New feature: **update-check** — readignore now checks GitHub for a newer version
