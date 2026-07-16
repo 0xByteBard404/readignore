@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testContent = `# comment
@@ -166,4 +167,75 @@ func TestParse_EdgeInputs(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, p.Matches(".env"))
 	assert.False(t, p.Matches(".ENV"), ".ENV 不应命中 .env（大小写敏感）")
+}
+
+func TestParseSections(t *testing.T) {
+	const src = `[read]
+.env
+*.pem
+
+[edit]
+package-lock.json
+
+[delete]
+.git/
+src/
+`
+	s, err := ParseSections(src)
+	require.NoError(t, err)
+	require.NotNil(t, s.Read)
+	require.NotNil(t, s.Edit)
+	require.NotNil(t, s.Delete)
+
+	// Read 段
+	assert.True(t, s.Read.Matches(".env"))
+	assert.True(t, s.Read.Matches("secret.pem"))
+	assert.False(t, s.Read.Matches("package-lock.json"), "package-lock 在 edit 段，不在 read")
+
+	// Edit 段
+	assert.True(t, s.Edit.Matches("package-lock.json"))
+	assert.False(t, s.Edit.Matches(".env"), ".env 在 read 段")
+
+	// Delete 段
+	assert.True(t, s.Delete.Matches(".git/config")) // .git/ 目录锚定
+	assert.True(t, s.Delete.Matches("src/main.go")) // src/ 目录锚定
+	assert.False(t, s.Delete.Matches(".env"))
+}
+
+func TestParseSections_NoSection_DefaultsToRead(t *testing.T) {
+	// 无段头 → 全归 Read（向后兼容）
+	s, err := ParseSections(".env\n*.pem\n")
+	require.NoError(t, err)
+	assert.True(t, s.Read.Matches(".env"))
+	assert.True(t, s.Read.Matches("x.pem"))
+	// Edit/Delete 段为空 matcher（Matches 返回 false）
+	assert.False(t, s.Edit.Matches(".env"))
+	assert.False(t, s.Delete.Matches(".env"))
+}
+
+func TestParseSections_SamePatternMultipleSections(t *testing.T) {
+	s, err := ParseSections("[read]\n.env\n[delete]\n.env\n")
+	require.NoError(t, err)
+	assert.True(t, s.Read.Matches(".env"))
+	assert.True(t, s.Delete.Matches(".env"))
+	assert.False(t, s.Edit.Matches(".env"))
+}
+
+func TestParseSections_UnknownSection(t *testing.T) {
+	// 未知段头 → stderr 警告 + 忽略该段（不进任何段）
+	s, err := ParseSections("[read]\n.env\n[write]\nfoo.txt\n[edit]\nbar.txt\n")
+	require.NoError(t, err)
+	assert.True(t, s.Read.Matches(".env"))
+	assert.True(t, s.Edit.Matches("bar.txt"))
+	assert.False(t, s.Read.Matches("foo.txt"), "foo 在未知 [write] 段，被忽略")
+	assert.False(t, s.Edit.Matches("foo.txt"))
+	assert.False(t, s.Delete.Matches("foo.txt"))
+}
+
+func TestParse_BackwardCompat(t *testing.T) {
+	// Parse 返回 = ParseSections 的 Read 段
+	m, err := Parse(".env\n*.pem\n")
+	require.NoError(t, err)
+	assert.True(t, m.Matches(".env"))
+	assert.True(t, m.Matches("x.pem"))
 }

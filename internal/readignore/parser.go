@@ -6,6 +6,9 @@ package readignore
 
 import (
 	"bufio"
+	"fmt"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-git/go-git/v5/plumbing/format/gitignore"
@@ -41,35 +44,15 @@ type Matcher struct {
 // 注释与空行不会进入返回的 Patterns。
 //
 // 当前实现不会返回非 nil error；保留 error 返回值供未来语法校验扩展。
+//
+// 包装 ParseSections：返 Read 段（即无段头的裸 pattern + 显式 [read] 段），
+// 保持现有消费者行为不变。
 func Parse(content string) (*Matcher, error) {
-	if content == "" {
-		return &Matcher{Patterns: nil, matcher: gitignore.NewMatcher(nil)}, nil
-	}
-
-	m := &Matcher{}
-	var gitPatterns []gitignore.Pattern
-
-	scanner := bufio.NewScanner(strings.NewReader(content))
-	for scanner.Scan() {
-		line := scanner.Text()
-		raw := strings.TrimRight(line, "\r\n")
-		// 保留原始（去掉首尾空白）用于 Raw 字段，同时用原文判断注释。
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-
-		// domain 为 nil：.readignore 规则相对仓库根，go-git 据此匹配。
-		gp := gitignore.ParsePattern(trimmed, nil)
-		m.Patterns = append(m.Patterns, Pattern{Raw: trimmed, gitPattern: gp})
-		gitPatterns = append(gitPatterns, gp)
-	}
-	if err := scanner.Err(); err != nil {
+	s, err := ParseSections(content)
+	if err != nil {
 		return nil, err
 	}
-
-	m.matcher = gitignore.NewMatcher(gitPatterns)
-	return m, nil
+	return s.Read, nil
 }
 
 // Matches 判断给定的相对路径是否被 .readignore 命中（即应被忽略/拦截）。
@@ -109,4 +92,83 @@ func (m *Matcher) Matches(p string) bool {
 		return false
 	}
 	return m.matcher.Match(cleanSegs, isDir)
+}
+
+// Op 是 .readignore 的权限分类（分段式语法的段头）。
+type Op string
+
+const (
+	OpRead   Op = "read"
+	OpEdit   Op = "edit"
+	OpDelete Op = "delete"
+)
+
+// Sections 是 .readignore 按权限分类的解析结果，每段一个独立 *Matcher。
+// Read 段含 [read] 段规则 + 无段头的裸 pattern（向后兼容）。
+type Sections struct {
+	Read   *Matcher
+	Edit   *Matcher
+	Delete *Matcher
+}
+
+var sectionHeaderRe = regexp.MustCompile(`(?i)^\[(read|edit|delete)\]\s*(#.*)?$`)
+
+// ParseSections 解析含段头的 .readignore，返回三段 matcher。
+// 段头前/无段头的裸 pattern 归 Read（向后兼容）。
+// 未知段头（如 [write]）→ stderr 警告 + 该段 pattern 忽略（不进任何段）。
+func ParseSections(content string) (*Sections, error) {
+	s := &Sections{
+		Read:   &Matcher{matcher: gitignore.NewMatcher(nil)},
+		Edit:   &Matcher{matcher: gitignore.NewMatcher(nil)},
+		Delete: &Matcher{matcher: gitignore.NewMatcher(nil)},
+	}
+	// 三桶累积 gitignore.Pattern + Raw
+	type bucket struct {
+		m           *Matcher
+		gitPatterns []gitignore.Pattern
+	}
+	buckets := map[Op]*bucket{
+		OpRead:   {m: s.Read},
+		OpEdit:   {m: s.Edit},
+		OpDelete: {m: s.Delete},
+	}
+
+	currentOp := OpRead // 默认 Read（无段头归 read）
+	var discard bool    // 未知段头 → true，丢弃后续直到下一个已知段头
+
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	for scanner.Scan() {
+		trimmed := strings.TrimSpace(scanner.Text())
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// 段头检测
+		if m := sectionHeaderRe.FindStringSubmatch(trimmed); m != nil {
+			currentOp = Op(strings.ToLower(m[1]))
+			discard = false // 已知段头，恢复收集
+			continue
+		}
+		// 未知段头（[xxx] 但不是 read/edit/delete）
+		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
+			fmt.Fprintf(os.Stderr, "readignore: warning: unknown section %s, ignored\n", trimmed)
+			discard = true
+			continue
+		}
+		if discard {
+			continue // 未知段的 pattern 丢弃
+		}
+		// pattern 归当前段
+		gp := gitignore.ParsePattern(trimmed, nil)
+		b := buckets[currentOp]
+		b.m.Patterns = append(b.m.Patterns, Pattern{Raw: trimmed, gitPattern: gp})
+		b.gitPatterns = append(b.gitPatterns, gp)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	// 各段建 matcher
+	for _, b := range buckets {
+		b.m.matcher = gitignore.NewMatcher(b.gitPatterns)
+	}
+	return s, nil
 }
