@@ -2,7 +2,6 @@ package cli
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,18 +11,6 @@ import (
 
 	"github.com/0xByteBard404/readignore/internal/adapter"
 )
-
-// normalizeJSON 规范化 JSON 字节（解析后重新序列化），消除空白/键序差异用于断言。
-//
-//nolint:unused // 保留为 brief 指定的断言辅助；当前用例用 assert.JSONEq，后续用例可复用。
-func normalizeJSON(t *testing.T, b []byte) []byte {
-	t.Helper()
-	var v any
-	require.NoError(t, json.Unmarshal(b, &v))
-	out, err := json.MarshalIndent(v, "", "  ")
-	require.NoError(t, err)
-	return out
-}
 
 func TestRemoveSurgicalJSON(t *testing.T) {
 	spec := adapter.SurgicalSpec{HookPath: "hooks.PreToolUse", Fingerprint: "readignore.sh"}
@@ -71,7 +58,7 @@ func TestRemoveSurgicalJSON(t *testing.T) {
 		dryRun     bool
 		wantAction removalAction
 		wantExists bool   // 处理后文件是否存在
-		wantRemain []byte // 规范化后的剩余内容（wantExists=true 时校验）；nil 不校验
+		wantRemain []byte // 期望剩余内容（用 JSONEq 做等价断言）；nil 不校验
 		wantErr    bool
 	}{
 		{
