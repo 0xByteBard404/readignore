@@ -32,6 +32,36 @@ const (
 	StrengthSoft Strength = "soft"
 )
 
+// RemovalKind 描述产物文件的卸载策略（uninstall 时如何处理）。
+//
+// 零值 RemovalDefault = 整文件删除，向后兼容 readignore 独占产物（sh/ts）。
+// 共享配置文件（用户/其他工具也会写入）用 Surgical 或 PureProduct 策略，
+// 避免 uninstall 误删用户配置（详见 docs/superpowers/specs/2026-07-19-uninstall-surgical-removal-design.md）。
+type RemovalKind int
+
+const (
+	// RemovalDefault：整文件删除。readignore 独占文件（.claude/hooks/readignore.sh 等）用此策略。
+	RemovalDefault RemovalKind = iota
+
+	// RemovalSurgical：共享 JSON 文件，按指纹（SurgicalSpec）精确摘除 readignore 注入的段，
+	// 保留其余内容。用于 claudecode settings.json / codex hooks.json。
+	RemovalSurgical
+
+	// RemovalPureProduct：共享 JSON 文件，仅当「整文件都是 readignore 原样产物」时整删，
+	// 否则跳过并提示用户手动处理。用于 opencode.json / kilo.json。
+	RemovalPureProduct
+)
+
+// SurgicalSpec 描述 RemovalSurgical 摘除所需的参数。
+type SurgicalSpec struct {
+	// HookPath 是 readignore 注册所在的 JSON 路径（点分隔），例如 "hooks.PreToolUse"。
+	// 引擎在该路径指向的数组里逐 matcher 块检查 hooks 数组。
+	HookPath string
+	// Fingerprint 是识别 readignore hook 的子串：hook entry 的 command 字段
+	// 含此子串即视为 readignore 注入项，予以摘除。当前为 "readignore.sh"。
+	Fingerprint string
+}
+
 // GeneratedFile 描述适配器 Generate 产出的单个待写入文件。
 //
 // 调用方（安装层/cmd）负责把这些文件写到磁盘并设置权限。Mode 用 uint32
@@ -45,6 +75,13 @@ type GeneratedFile struct {
 	// Mode 文件权限位（如 0644 / 0755）；为 0 表示由调用方使用默认权限
 	// （典型：配置文件 0644、可执行 hook 0755）。详见类型级 doc 的「默认」语义。
 	Mode uint32
+
+	// Removal 是该产物的卸载策略；零值 RemovalDefault 表示整删。
+	// 共享配置文件应显式设为 RemovalSurgical 或 RemovalPureProduct，避免误删用户配置。
+	Removal RemovalKind
+	// Surgical 仅 RemovalSurgical 时使用，描述摘除参数。
+	// 其他策略下应为 nil。
+	Surgical *SurgicalSpec
 }
 
 // ClassifiedPatterns 是按权限分类的原始规则（供 opencode/kilo 等需要把规则
