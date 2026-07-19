@@ -136,6 +136,10 @@ func runUninstall(out io.Writer, args []string, all, dryRun bool) error {
 		if dryRun {
 			verb = "将"
 		}
+		// 摘要行永远打印四个列标签（「将/已删除 N」「将/已摘除 N」…）——即便某分支
+		// 没跑也会出现「摘除 0」字样。测试要验证某个分支真执行，应断言该分支打印的
+		// per-file 消息（如「将摘除 .claude/settings.json 的 readignore 段」），而非
+		// 断言「将摘除」子串（会命中摘要素引列、得到空测试）。
 		fmt.Fprintf(out, "适配器 %s：%s删除 %d / %s摘除 %d / 跳过 %d（不存在 %d）。\n",
 			a.ID(), verb, res.removed, verb, res.modified, res.skipped, res.missing)
 		if res.failed > 0 {
@@ -195,11 +199,14 @@ func removeGeneratedFiles(out io.Writer, repoRoot, adapterID string, files []ada
 		switch f.Removal {
 		case adapter.RemovalSurgical:
 			if f.Surgical == nil {
-				// 声明了 Surgical 但未给参数：保守退化为整删（独占文件语义）。
-				action, err = removeWhole(out, absPath, f.Path, dryRun)
-			} else {
-				action, err = removeSurgicalJSON(out, absPath, f.Path, *f.Surgical, dryRun)
+				// 防御性不变量守卫：声明 Surgical 却没带 SurgicalSpec 是适配器作者
+				// 的契约违规。共享 JSON 配置（如 settings.json）绝不能因此整删——
+				// §5 铁律：不确定性永不退化为整删。跳过该文件并计失败，等修复声明。
+				fmt.Fprintf(out, "  失败 %s：Surgical 声明缺少 SurgicalSpec，已跳过（不退化为整删）\n", f.Path)
+				res.failed++
+				continue
 			}
+			action, err = removeSurgicalJSON(out, absPath, f.Path, *f.Surgical, dryRun)
 		case adapter.RemovalPureProduct:
 			action, err = removePureProduct(out, absPath, f.Path, adapterID, expectedContents[f.Path], dryRun)
 		default:

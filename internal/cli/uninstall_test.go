@@ -134,17 +134,35 @@ func TestUninstall_ClaudeCode_SurgicalKeepsPermissions(t *testing.T) {
 	assert.JSONEq(t, `{"permissions": {"allow": ["Bash(ls:*)"]}}`, string(raw))
 }
 
-// dry-run：settings.json 含 permissions + readignore -> 输出「将摘除」且文件不变。
+// dry-run：settings.json 含 permissions + readignore -> 输出 per-file「将摘除」且文件不变。
+//
+// 必须注入用户 permissions（mirror TestUninstall_ClaudeCode_SurgicalKeepsPermissions）：
+// install 写出的 settings.json 只含 readignore hook，摘段后 root 为空 -> 走「将删除」
+// 整删分支，per-file 不会打印「将摘除」。那样 assert.Contains(out,"将摘除") 只能命中
+// 摘要行的列标签（"将摘除 0"），即便 removeGeneratedFiles 顶部加了 `if dryRun { continue }`
+// 跳过整个 surgical 分支也会通过——正是 §3.1 退化的回归。注入 permissions 后摘段 root
+// 非空 -> 走写回分支打印 per-file「将摘除 .claude/settings.json 的 readignore 段」，
+// 该子串只在 surgical 分支真跑时出现，从而真正守卫 dry-run 不再 early-return。
 func TestUninstall_DryRun_SurgicalPreview(t *testing.T) {
 	dir := chdirTemp(t)
 	writeFile(t, ".", ".readignore", ".env\n")
 	_, err := runCmd(t, []string{"install", "claude-code"})
 	require.NoError(t, err)
 
+	// 注入用户 permissions（与 SurgicalKeepsPermissions 同形）：摘 readignore hook 后
+	// root 仍非空 -> 走写回分支，打印 per-file「将摘除」而非「将删除（摘除后为空）」。
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	mixed := `{
+  "permissions": {"allow": ["Bash(ls:*)"]},
+  "hooks": {"PreToolUse": [{"matcher": "Read|Grep|Glob|Bash|Edit|Write|NotebookEdit", "hooks": [{"type": "command", "command": "bash .claude/hooks/readignore.sh", "shell": "bash", "timeout": 5}]}]}
+}`
+	require.NoError(t, os.WriteFile(settingsPath, []byte(mixed), 0o644))
+
 	out, err := runCmd(t, []string{"uninstall", "claude-code", "--dry-run"})
 	require.NoError(t, err)
-	assert.Contains(t, out, "将摘除")
-	// dry-run 不改盘：settings.json 仍是 install 写的原样。
+	// per-file 消息（surgical 分支真跑才会打印）；不要 assert 摘要行的「将摘除」列标签。
+	assert.Contains(t, out, "将摘除 .claude/settings.json")
+	// dry-run 不改盘：settings.json 仍是我们注入的原样。
 	assert.FileExists(t, filepath.Join(dir, ".claude/settings.json"))
 }
 
@@ -198,7 +216,9 @@ func TestRemoveGeneratedFiles_Dispatch(t *testing.T) {
 // 目录清理：action==removed 才清空父目录；modified 不清。
 func TestRemoveGeneratedFiles_DirPruning(t *testing.T) {
 	dir := t.TempDir()
-	// sh 在 .codex/hooks/ 下，整删后应清空 .codex/hooks/ 与 .codex/。
+	// sh 在 .codex/hooks/ 下。triedDirs 仅对每个产物尝试 filepath.Dir(absPath)——
+	// 单文件 .codex/hooks/readignore.sh 的直接父目录就是 .codex/hooks/，故只清它；
+	// .codex/ 不会被尝试（没有任何产物以它为直接父目录），故意保留以防误删用户目录。
 	files := []adapter.GeneratedFile{
 		{Path: ".codex/hooks/readignore.sh", Content: "# sh", Mode: 0o755},
 	}
@@ -208,5 +228,5 @@ func TestRemoveGeneratedFiles_DirPruning(t *testing.T) {
 	res := removeGeneratedFiles(buf, dir, "codex", files, false, nil)
 	require.Equal(t, 1, res.removed)
 	assert.NoFileExists(t, filepath.Join(dir, ".codex/hooks/readignore.sh"))
-	assert.Contains(t, buf.String(), "已清空目录") // .codex/hooks/ 被清
+	assert.Contains(t, buf.String(), "已清空目录 .codex/hooks") // 仅 .codex/hooks/ 被清
 }
