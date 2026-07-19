@@ -133,3 +133,99 @@ func TestRemoveSurgicalJSON_MissingFile(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, actionUnchanged, action)
 }
+
+func TestRemovePureProduct(t *testing.T) {
+	// readignore 空规则下 Generate 的 opencode.json 形态（纯产物）。
+	opencodePure := `{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "read": {},
+    "edit": {}
+  }
+}`
+	opencodeWithRules := `{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {"read": {".env": "deny"}, "edit": {}}
+}`
+	// 用户在 readignore 产物基础上加了顶层 model 键 -> 非纯产物。
+	opencodeWithUserTopKey := `{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "gpt-4",
+  "permission": {"read": {}, "edit": {}}
+}`
+	kiloPure := `{
+  "permission": {
+    "read": {},
+    "edit": {}
+  }
+}`
+
+	tests := []struct {
+		name       string
+		adapterID  string
+		input      string
+		expected   string // expectedContent；"" 表示只用结构判定
+		dryRun     bool
+		wantAction removalAction
+		wantExists bool
+		wantErr    bool
+	}{
+		{
+			name: "opencode 纯产物 + expected 匹配 -> 整删", adapterID: "opencode",
+			input: opencodePure, expected: opencodePure,
+			wantAction: actionRemoved, wantExists: false,
+		},
+		{
+			name: "opencode 含用户顶层键 -> 跳过", adapterID: "opencode",
+			input: opencodeWithUserTopKey, expected: "",
+			wantAction: actionUnchanged, wantExists: true,
+		},
+		{
+			name: "opencode 结构纯但字节被改（用户追加 glob）+ expected 不匹配 -> 跳过", adapterID: "opencode",
+			input: opencodeWithRules, expected: opencodePure, // 用户文件含 .env，expected 是空规则 -> 不等
+			wantAction: actionUnchanged, wantExists: true,
+		},
+		{
+			name: "opencode 结构纯、expected 为空（.readignore 不可读）-> 退回结构判定 -> 整删", adapterID: "opencode",
+			input: opencodePure, expected: "",
+			wantAction: actionRemoved, wantExists: false,
+		},
+		{
+			name: "kilo 纯产物 -> 整删", adapterID: "kilocode",
+			input: kiloPure, expected: "",
+			wantAction: actionRemoved, wantExists: false,
+		},
+		{
+			name: "无效 JSON -> 不动 + error", adapterID: "opencode",
+			input: `{broken`, expected: "",
+			wantAction: actionUnchanged, wantExists: true, wantErr: true,
+		},
+		{
+			name: "dry-run 纯产物 -> 报告 removed 但不真删", adapterID: "opencode",
+			input: opencodePure, expected: opencodePure, dryRun: true,
+			wantAction: actionRemoved, wantExists: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "opencode.json")
+			require.NoError(t, os.WriteFile(path, []byte(tt.input), 0o644))
+
+			buf := &bytes.Buffer{}
+			action, err := removePureProduct(buf, path, "opencode.json", tt.adapterID, tt.expected, tt.dryRun)
+
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			assert.Equal(t, tt.wantAction, action)
+
+			_, statErr := os.Stat(path)
+			gotExists := !os.IsNotExist(statErr)
+			assert.Equal(t, tt.wantExists, gotExists, "文件存在性")
+		})
+	}
+}

@@ -169,3 +169,99 @@ func pruneEmptyHookContainers(root map[string]any, hookPath string) {
 		delete(root, parts[0])
 	}
 }
+
+// removePureProduct 仅当 absPath 整体是 readignore 生成的原样产物时整删；否则跳过并提示。
+//
+// 判定两层（都过才删）：
+//  1. 结构判定（isPureProduct）：顶层键集合 ⊆ readignore 会写的键；
+//  2. 字节比对（expectedContent 非空时）：磁盘内容与 expectedContent 规范化后相等。
+//
+// expectedContent 由调用方按优先级提供：.readignore 可读时用其 plan Generate 的 Content
+// （= 用户 install 时应有的内容）；不可读时传空 -> 只用结构判定（退回 §6.1 边界）。
+//
+// 错误降级（铁律）：解析失败 -> 不动文件 + error。
+func removePureProduct(out io.Writer, absPath, displayPath, adapterID, expectedContent string, dryRun bool) (removalAction, error) {
+	raw, err := os.ReadFile(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return actionUnchanged, nil
+		}
+		fmt.Fprintf(out, "  失败 %s：%v\n", displayPath, err)
+		return actionUnchanged, err
+	}
+
+	var root map[string]any
+	if err := json.Unmarshal(raw, &root); err != nil {
+		fmt.Fprintf(out, "  跳过 %s：不是合法 JSON，请手动处理\n", displayPath)
+		return actionUnchanged, err
+	}
+
+	if !isPureProduct(root, adapterID) {
+		fmt.Fprintf(out, "  跳过 %s（含非 readignore 配置或已被改动，请手动处理）\n", displayPath)
+		return actionUnchanged, nil
+	}
+	if expectedContent != "" && !jsonEqual(raw, []byte(expectedContent)) {
+		fmt.Fprintf(out, "  跳过 %s（含非 readignore 配置或已被改动，请手动处理）\n", displayPath)
+		return actionUnchanged, nil
+	}
+
+	if dryRun {
+		fmt.Fprintf(out, "  将删除 %s（纯 readignore 产物）\n", displayPath)
+		return actionRemoved, nil
+	}
+	if err := os.Remove(absPath); err != nil {
+		fmt.Fprintf(out, "  失败 %s：%v\n", displayPath, err)
+		return actionUnchanged, err
+	}
+	fmt.Fprintf(out, "  已删除 %s（纯 readignore 产物）\n", displayPath)
+	return actionRemoved, nil
+}
+
+// isPureProduct 结构判定：root 的顶层键集合是否 ⊆ 该 adapter 会写的键。
+func isPureProduct(root map[string]any, adapterID string) bool {
+	var allowedTop map[string]bool
+	allowedPerm := map[string]bool{"read": true, "edit": true}
+	switch adapterID {
+	case "opencode":
+		allowedTop = map[string]bool{"$schema": true, "permission": true}
+	case "kilocode":
+		allowedTop = map[string]bool{"permission": true}
+	default:
+		return false
+	}
+	for k := range root {
+		if !allowedTop[k] {
+			return false
+		}
+	}
+	perm, ok := root["permission"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for k := range perm {
+		if !allowedPerm[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// jsonEqual 规范化比较两段 JSON 字节（解析后重新序列化），消除空白/键序差异。
+func jsonEqual(a, b []byte) bool {
+	var ja, jb any
+	if err := json.Unmarshal(a, &ja); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &jb); err != nil {
+		return false
+	}
+	na, err := json.Marshal(ja)
+	if err != nil {
+		return false
+	}
+	nb, err := json.Marshal(jb)
+	if err != nil {
+		return false
+	}
+	return string(na) == string(nb)
+}
