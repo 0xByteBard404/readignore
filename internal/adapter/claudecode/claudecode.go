@@ -88,6 +88,11 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 			Path:    ".claude/settings.json",
 			Mode:    0,
 			Content: settingsJSON(),
+			Removal: adapter.RemovalSurgical,
+			Surgical: &adapter.SurgicalSpec{
+				HookPath:    "hooks.PreToolUse",
+				Fingerprint: "readignore.sh",
+			},
 		},
 	}, nil
 }

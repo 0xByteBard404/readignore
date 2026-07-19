@@ -128,6 +128,11 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 			Path:    ".codex/hooks.json",
 			Mode:    0,
 			Content: hooksJSON(),
+			Removal: adapter.RemovalSurgical,
+			Surgical: &adapter.SurgicalSpec{
+				HookPath:    "hooks.PreToolUse",
+				Fingerprint: "readignore.sh",
+			},
 		},
 	}, nil
 }

@@ -158,6 +158,7 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 		Path:    "kilo.json",
 		Content: string(buf),
 		Mode:    0,
+		Removal: adapter.RemovalPureProduct,
 	}}, nil
 }
 

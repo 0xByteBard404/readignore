@@ -196,6 +196,7 @@ func (Adapter) Generate(plan adapter.Plan) ([]adapter.GeneratedFile, error) {
 		Path:    "opencode.json",
 		Content: string(buf),
 		Mode:    0,
+		Removal: adapter.RemovalPureProduct,
 	}}, nil
 }
 

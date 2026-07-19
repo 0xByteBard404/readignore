@@ -229,3 +229,61 @@ func TestRemovePureProduct(t *testing.T) {
 		})
 	}
 }
+
+func TestAdapterRemovalDeclarations(t *testing.T) {
+	cases := []struct {
+		adapterID    string
+		path         string
+		wantRemoval  adapter.RemovalKind
+		wantHookPath string // Surgical 时校验
+	}{
+		{"claude-code", ".claude/settings.json", adapter.RemovalSurgical, "hooks.PreToolUse"},
+		{"codex", ".codex/hooks.json", adapter.RemovalSurgical, "hooks.PreToolUse"},
+		{"opencode", "opencode.json", adapter.RemovalPureProduct, ""},
+		{"kilocode", "kilo.json", adapter.RemovalPureProduct, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.adapterID+"/"+c.path, func(t *testing.T) {
+			a := mustGetAdapter(t, c.adapterID)
+			files, err := a.Generate(adapter.Plan{RepoRoot: t.TempDir()})
+			require.NoError(t, err)
+			var f *adapter.GeneratedFile
+			for i := range files {
+				if files[i].Path == c.path {
+					f = &files[i]
+					break
+				}
+			}
+			require.NotNil(t, f, "产物 %s 未找到", c.path)
+			assert.Equal(t, c.wantRemoval, f.Removal)
+			if c.wantHookPath != "" {
+				require.NotNil(t, f.Surgical)
+				assert.Equal(t, c.wantHookPath, f.Surgical.HookPath)
+				assert.Equal(t, "readignore.sh", f.Surgical.Fingerprint)
+			}
+		})
+	}
+}
+
+// 独占文件（sh/ts）保持 RemovalDefault（零值）。
+func TestAdapterRemoval_StandaloneFilesDefault(t *testing.T) {
+	cases := []struct{ id, path string }{
+		{"claude-code", ".claude/hooks/readignore.sh"},
+		{"codex", ".codex/hooks/readignore.sh"},
+		{"pi", ".pi/extensions/readignore.ts"},
+	}
+	for _, c := range cases {
+		t.Run(c.id+"/"+c.path, func(t *testing.T) {
+			a := mustGetAdapter(t, c.id)
+			files, err := a.Generate(adapter.Plan{RepoRoot: t.TempDir()})
+			require.NoError(t, err)
+			for _, f := range files {
+				if f.Path == c.path {
+					assert.Equal(t, adapter.RemovalDefault, f.Removal, "独占文件应零值整删")
+					return
+				}
+			}
+			t.Fatalf("产物 %s 未找到", c.path)
+		})
+	}
+}
