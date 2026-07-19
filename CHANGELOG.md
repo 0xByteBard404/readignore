@@ -14,6 +14,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- 下次发版在此添加 -->
 
+## [0.7.0] - 2026-07-19
+
+### Added / 新增
+
+- **Surgical uninstall** (`readignore uninstall`): shared config files
+  (`.claude/settings.json`, `.codex/hooks.json`, `opencode.json`, `kilo.json`)
+  now have only readignore's parts extracted — your `permissions`, other tools'
+  hooks, and unrelated config are preserved. readignore-only files
+  (`.claude/hooks/readignore.sh`, `.codex/hooks/readignore.sh`,
+  `.pi/extensions/readignore.ts`) still whole-delete with empty-dir pruning.
+  Previously `uninstall` whole-deleted every shared config file, clobbering user
+  config. Iron rule: invalid JSON / any uncertainty never degrades to whole-delete
+  (file untouched + hint).
+  — **精确卸载**（`readignore uninstall`）：共享配置文件（`.claude/settings.json`、
+    `.codex/hooks.json`、`opencode.json`、`kilo.json`）现在只摘除 readignore 自己写入的部分
+    ——你的 `permissions`、其他工具的 hook、无关配置一律保留。readignore 独占文件
+    （`.claude/hooks/readignore.sh`、`.codex/hooks/readignore.sh`、
+    `.pi/extensions/readignore.ts`）仍整删并清空空目录。此前 `uninstall` 会整删每个共享
+    配置文件，误伤用户配置。铁律：JSON 解析失败 / 任何不确定都不退化为整删（不动文件 + 提示）。
+
 ## [0.6.0] - 2026-07-16
 
 Two major features: **sectioned file permissions** (`[read]`/`[edit]`/`[delete]`) and **npm single-package with bundled binaries** (drop postinstall, allow-scripts-safe).
@@ -394,7 +414,8 @@ First public release. Claude Code (hard) + opencode (config) MVP.
   — 项目脚手架：`CONTRIBUTING.md`、`CODE_OF_CONDUCT.md`、`SECURITY.md`、MIT
     `LICENSE`、`Makefile` 目标、issue 模板。
 
-[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/0xByteBard404/readignore/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.7.0
 [0.6.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.6.0
 [0.5.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.5.0
 [0.4.0]: https://github.com/0xByteBard404/readignore/releases/tag/v0.4.0

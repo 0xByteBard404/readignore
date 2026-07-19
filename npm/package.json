@@ -1,6 +1,6 @@
 {
   "name": "readignore",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": ".gitignore for AI coding agents — declare files your AI agent must not read.",
   "keywords": [
     "ai", "ai-agent", "ai-coding", "agent", "coding-agent",
